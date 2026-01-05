@@ -1,0 +1,10 @@
+{
+  "name": "com.blackhorizon.horizonweathertime",
+  "version": "0.1.0",
+  "displayName": "Horizon Weather & Time",
+  "description": "Modular weather and time-of-day simulation. Supports volumetric clouds, profiles, and VRChat sync.",
+  "unity": "2022.3",
+  "author": {
+    "name": "Ibirtem"
+  }
+}

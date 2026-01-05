@@ -1,0 +1,120 @@
+using UnityEngine;
+using BlackHorizon.HorizonWeatherTime;
+
+#if UDONSHARP
+using UdonSharp;
+using VRC.SDKBase;
+using VRC.Udon;
+
+namespace BlackHorizon.HorizonWeatherTime
+{
+    [AddComponentMenu("Horizon/Horizon Time Driver (VRChat)")]
+    [UdonBehaviourSyncMode(BehaviourSyncMode.Manual)]
+    public class HorizonTimeDriver : UdonSharpBehaviour
+    {
+        [Header("References")]
+        [Tooltip("Reference to the main Weather System.")]
+        public WeatherTimeSystem targetSystem;
+
+        [Header("Sync Settings")]
+        [UdonSynced(UdonSyncMode.None)] private int _syncedProfileIndex;
+
+        private bool _isLocalOverride = false;
+        private VRCPlayerApi _localPlayer;
+        
+        private float _manualTime = 0.25f;
+
+        private void Start()
+        {
+            if (targetSystem == null) targetSystem = GetComponent<WeatherTimeSystem>();
+            _localPlayer = Networking.LocalPlayer;
+
+            if (targetSystem != null)
+            {
+                if (!targetSystem.useRealTime)
+                {
+                    _manualTime = targetSystem._sunTimeOfDay;
+                }
+                
+                ApplyWeather(_syncedProfileIndex);
+            }
+        }
+
+        private void LateUpdate()
+        {
+            if (targetSystem == null) return;
+
+            if (!Utilities.IsValid(_localPlayer))
+            {
+                _localPlayer = Networking.LocalPlayer;
+            }
+
+            float currentTime01 = 0f;
+
+            if (targetSystem.useRealTime)
+            {
+                System.DateTime currentUtc = System.DateTime.UtcNow;
+                
+                System.DateTime instanceTime = currentUtc.AddHours(targetSystem.timeZoneOffset);
+                
+                currentTime01 = (float)(instanceTime.TimeOfDay.TotalSeconds / 86400.0);
+            }
+            else
+            {    
+                _manualTime = targetSystem._sunTimeOfDay;
+                _manualTime += (Time.deltaTime / 86400f) * targetSystem.timeSpeed;
+                _manualTime %= 1.0f;
+                
+                currentTime01 = _manualTime;
+            }
+
+            Vector3 headPos = transform.position;
+            if (Utilities.IsValid(_localPlayer))
+            {
+                headPos = _localPlayer.GetTrackingData(VRCPlayerApi.TrackingDataType.Head).position;
+            }
+
+            targetSystem.ManualUpdate(currentTime01, headPos);
+        }
+
+        public override void OnDeserialization()
+        {
+            if (!_isLocalOverride) ApplyWeather(_syncedProfileIndex);
+        }
+
+        public override void OnPlayerJoined(VRCPlayerApi player)
+        {
+            if (Networking.IsOwner(gameObject)) RequestSerialization();
+        }
+
+        public void SetGlobalWeather(int profileIndex)
+        {
+            if (!Networking.IsOwner(gameObject)) Networking.SetOwner(Networking.LocalPlayer, gameObject);
+            _syncedProfileIndex = profileIndex;
+            RequestSerialization();
+
+            _isLocalOverride = false; 
+            ApplyWeather(profileIndex);
+        }
+
+        public void SetLocalWeather(int profileIndex)
+        {
+            _isLocalOverride = true;
+            ApplyWeather(profileIndex);
+        }
+
+        public void RevertToGlobalSync()
+        {
+            _isLocalOverride = false;
+            ApplyWeather(_syncedProfileIndex);
+        }
+
+        private void ApplyWeather(int index)
+        {
+            if (targetSystem != null) targetSystem.SetWeatherProfile(index);
+        }
+    }
+}
+#else
+namespace BlackHorizon.HorizonWeatherTime { public class HorizonTimeDriver : MonoBehaviour { } }
+#endif

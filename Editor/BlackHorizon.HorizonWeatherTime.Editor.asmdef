@@ -1,0 +1,21 @@
+{
+    "name": "BlackHorizon.HorizonWeatherTime.Editor",
+    "rootNamespace": "",
+    "references": [
+        "BlackHorizon.HorizonWeatherTime.Runtime",
+        "UdonSharp.Runtime",
+        "VRC.Udon",
+        "BlackHorizon.HorizonWeatherTime.Data"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": false,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
