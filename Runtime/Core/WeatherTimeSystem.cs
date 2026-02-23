@@ -47,6 +47,8 @@ namespace BlackHorizon.HorizonWeatherTime
         [Tooltip("The index of the currently active profile.")]
         [SerializeField] private int _currentProfileIndex = 0;
 
+        private int _lastActiveProfileIndex = -1;
+
 #if !COMPILER_UDONSHARP && UNITY_EDITOR
         public WeatherProfile CurrentWeatherProfile
         {
@@ -103,6 +105,15 @@ namespace BlackHorizon.HorizonWeatherTime
         [SerializeField] private Color[] _bake_cloudColor;
         [SerializeField] private Color[] _bake_cloudShadow;
         [SerializeField] private float[] _bake_cloudScatter;
+
+        [SerializeField] private bool[] _bake_fogEnabled;
+        [SerializeField] private int[] _bake_fogMode;
+        [SerializeField] private Color[] _bake_fogDay;
+        [SerializeField] private Color[] _bake_fogNight;
+        [SerializeField] private float[] _bake_fogDensity;
+        [SerializeField] private float[] _bake_fogStart;
+        [SerializeField] private float[] _bake_fogEnd;
+        [SerializeField] private float[] _bake_fogSkyBlend;
         // =========================================================
 
         [Header("System References")]
@@ -207,6 +218,15 @@ namespace BlackHorizon.HorizonWeatherTime
             _bake_cloudShadow = new Color[count];
             _bake_cloudScatter = new float[count];
 
+            _bake_fogEnabled = new bool[count];
+            _bake_fogMode = new int[count];
+            _bake_fogDay = new Color[count];
+            _bake_fogNight = new Color[count];
+            _bake_fogDensity = new float[count];
+            _bake_fogStart = new float[count];
+            _bake_fogEnd = new float[count];
+            _bake_fogSkyBlend = new float[count];
+
             for (int i = 0; i < count; i++)
             {
                 var p = weatherProfilesList[i] as WeatherProfile;
@@ -256,6 +276,16 @@ namespace BlackHorizon.HorizonWeatherTime
                 _bake_cloudColor[i] = p.cloudSettings.baseColor;
                 _bake_cloudShadow[i] = p.cloudSettings.shadowColor;
                 _bake_cloudScatter[i] = p.cloudSettings.lightScattering;
+                
+                // Fog
+                _bake_fogEnabled[i] = p.fogSettings.enabled;
+                _bake_fogMode[i] = (int)p.fogSettings.fogMode;
+                _bake_fogDay[i] = p.fogSettings.dayColor;
+                _bake_fogNight[i] = p.fogSettings.nightColor;
+                _bake_fogDensity[i] = p.fogSettings.density;
+                _bake_fogStart[i] = p.fogSettings.startDistance;
+                _bake_fogEnd[i] = p.fogSettings.endDistance;
+                _bake_fogSkyBlend[i] = p.fogSettings.skyboxBlendIntegrity;
             }
         }
 #endif
@@ -474,20 +504,55 @@ namespace BlackHorizon.HorizonWeatherTime
         }
 
         // =========================================================
-        // INTERNAL LOGIC (Using Baked Data Only)
+        // INTERNAL LOGIC
         // =========================================================
 
         private void UpdateSystem()
         {
-            if (_bakedProfileCount == 0) return;
+            if (_bakedProfileCount == 0 || weatherProfilesList == null) return;
 
-            if (_currentProfileIndex >= _bakedProfileCount) _currentProfileIndex = 0;
+            if (_currentProfileIndex < 0 || _currentProfileIndex >= _bakedProfileCount)
+                _currentProfileIndex = 0;
+
             int idx = _currentProfileIndex;
 
             if (_bake_sunZenith == null || idx >= _bake_sunZenith.Length) return;
             if (_lightingManager == null) return;
 
-            // 1. Update Lights
+            if (_lastActiveProfileIndex != idx)
+            {
+                _lastActiveProfileIndex = idx;
+
+                if (_bake_effectPrefab != null && idx < _bake_effectPrefab.Length)
+                {
+                    if (_bake_effectPrefab[idx] == null)
+                    {
+                        Debug.LogWarning($"<b><color=#FF9900>[WARNING]</color></b> <color=white>[WeatherTimeSystem] Profile '{weatherProfilesList[idx].name}' has NO Weather Effect Prefab assigned! Particle generation will be skipped.</color>", this);
+                    }
+                }
+            }
+
+#if !COMPILER_UDONSHARP && UNITY_EDITOR
+            bool needsRebake = false;
+            if (_bake_fogEnabled == null || _bake_fogEnabled.Length != _bakedProfileCount) needsRebake = true;
+            else if (_bake_effectPrefab == null || _bake_effectPrefab.Length != _bakedProfileCount) needsRebake = true;
+
+            if (needsRebake)
+            {
+                Debug.Log("<b><color=#33FF33>[LOG]</color></b> <color=white>[WeatherTimeSystem] Mismatched baked arrays detected. Auto-rebaking profiles...</color>", this);
+                BakeProfiles();
+                if (_bake_sunZenith == null || idx >= _bake_sunZenith.Length) return; 
+            }
+#endif
+
+            Color particleLightColor = ApplyLighting(idx);
+            Color currentFogColor = ApplyFog(idx);
+            ApplySky(idx, currentFogColor);
+            ApplyEffects(idx, particleLightColor);
+        }
+
+        private Color ApplyLighting(int idx)
+        {
             _lightingManager.UpdateLighting(
                 _sunTimeOfDay, _moonTimeOfDay,
                 _bake_sunHorizon[idx], _bake_sunZenith[idx], _bake_sunIntensity[idx],
@@ -495,73 +560,111 @@ namespace BlackHorizon.HorizonWeatherTime
                 _bake_dayAmbient[idx], _bake_nightAmbient[idx]
             );
 
-            // 2. Calculate Lighting Color for Particles
-            Color particleLightColor = _lightingManager.CalculateCurrentGlobalLight(
+            return _lightingManager.CalculateCurrentGlobalLight(
                 _sunTimeOfDay, _moonTimeOfDay,
                 _bake_sunHorizon[idx], _bake_sunZenith[idx], _bake_sunIntensity[idx],
                 _bake_moonColor[idx], _bake_moonIntensity[idx],
                 _bake_dayAmbient[idx], _bake_nightAmbient[idx]
             );
+        }
 
-            // 3. Update Skybox & Stars
-            if (_skyManager != null)
+        private Color ApplyFog(int idx)
+        {
+            Color currentFogColor = Color.black;
+
+            if (_bake_fogEnabled != null && idx < _bake_fogEnabled.Length && _bake_fogEnabled[idx])
             {
-                var sun = _lightingManager.SunLight;
-                var moon = _lightingManager.MoonLight;
-
-                if (sun != null)
+                var sunLight = _lightingManager.SunLight;
+                if (sunLight == null)
                 {
-                    _skyManager.UpdateSky(sun.transform.forward,
-                        _bake_rayleigh[idx],
-                        _bake_turbidity[idx],
-                        _bake_mieCoeff[idx],
-                        _bake_mieG[idx],
-                        _bake_exposure[idx]
-                    );
-
-                    _skyManager.UpdateStars(_sunTimeOfDay, sun.transform.forward,
-                        _bake_starsTex[idx],
-                        _bake_starsRot[idx],
-                        _bake_twinkleScale[idx],
-                        _bake_twinkleSpeed[idx],
-                        _bake_twinkleStrength[idx]
-                    );
-
-                    _skyManager.UpdateClouds(
-                        _bake_cloudTex[idx],
-                        _bake_cloudAltitude[idx],
-                        _bake_cloudScale[idx],
-                        _bake_cloudCoverage[idx],
-                        _bake_cloudDensity[idx],
-                        _bake_cloudDetail[idx],
-                        _bake_cloudWisp[idx],
-                        _bake_cloudWind[idx],
-                        _bake_cloudColor[idx],
-                        _bake_cloudShadow[idx],
-                        _bake_cloudScatter[idx]
-                    );
+                    RenderSettings.fog = false;
+                    return Color.black;
                 }
 
-                if (moon != null)
+                float sunHeight = -sunLight.transform.forward.y;
+                float fogDayFactor = Mathf.InverseLerp(-0.1f, 0.1f, sunHeight);
+                float sunIntensityFactor = _bake_sunIntensity[idx] > 0 ? (sunLight.intensity / _bake_sunIntensity[idx]) : 0;
+
+                float finalFogMix = Mathf.Clamp01(fogDayFactor * sunIntensityFactor);
+                currentFogColor = Color.Lerp(_bake_fogNight[idx], _bake_fogDay[idx], finalFogMix);
+
+                RenderSettings.fog = true;
+                RenderSettings.fogMode = (FogMode)_bake_fogMode[idx];
+                RenderSettings.fogColor = currentFogColor;
+                RenderSettings.fogDensity = _bake_fogDensity[idx];
+                RenderSettings.fogStartDistance = _bake_fogStart[idx];
+                RenderSettings.fogEndDistance = _bake_fogEnd[idx];
+            }
+            else
+            {
+                RenderSettings.fog = false;
+            }
+
+            return currentFogColor;
+        }
+
+        private void ApplySky(int idx, Color currentFogColor)
+        {
+            if (_skyManager == null) return;
+
+            var sun = _lightingManager.SunLight;
+            var moon = _lightingManager.MoonLight;
+
+            Texture safeStarsTex = null;
+            if (_bake_starsTex != null && idx < _bake_starsTex.Length) safeStarsTex = _bake_starsTex[idx];
+
+            Texture safeCloudTex = null;
+            if (_bake_cloudTex != null && idx < _bake_cloudTex.Length) safeCloudTex = _bake_cloudTex[idx];
+
+            Texture safeMoonTex = null;
+            if (_bake_moonTex != null && idx < _bake_moonTex.Length) safeMoonTex = _bake_moonTex[idx];
+
+            if (sun != null)
+            {
+                _skyManager.UpdateSky(sun.transform.forward,
+                    _bake_rayleigh[idx], _bake_turbidity[idx],
+                    _bake_mieCoeff[idx], _bake_mieG[idx], _bake_exposure[idx]
+                );
+
+                _skyManager.UpdateStars(_sunTimeOfDay, sun.transform.forward,
+                    safeStarsTex, _bake_starsRot[idx], _bake_twinkleScale[idx],
+                    _bake_twinkleSpeed[idx], _bake_twinkleStrength[idx]
+                );
+
+                _skyManager.UpdateClouds(safeCloudTex,
+                    _bake_cloudAltitude[idx], _bake_cloudScale[idx], _bake_cloudCoverage[idx],
+                    _bake_cloudDensity[idx], _bake_cloudDetail[idx], _bake_cloudWisp[idx],
+                    _bake_cloudWind[idx], _bake_cloudColor[idx], _bake_cloudShadow[idx],
+                    _bake_cloudScatter[idx]
+                );
+
+                if (_bake_fogEnabled != null && idx < _bake_fogEnabled.Length)
                 {
-                    _skyManager.UpdateMoon(
-                        moon.transform.forward,
-                        _bake_moonTex[idx],
-                        _lightingManager.MoonSkyboxColor,
-                        _bake_moonSize[idx]
-                    );
+                    _skyManager.UpdateSkyboxFog(_bake_fogEnabled[idx], currentFogColor, _bake_fogSkyBlend[idx]);
                 }
             }
 
-            // 4. Update Weather Effects (Rain/Snow)
-            if (_weatherEffectsManager != null)
+            if (moon != null)
             {
-                if (idx < _bake_effectHeight.Length && idx < _bake_effectPrefab.Length)
-                {
-                    _weatherEffectsManager.SetHeightOffset(_bake_effectHeight[idx]);
-                    _weatherEffectsManager.UpdateWeatherEffects(_bake_effectPrefab[idx], _bake_effectHeight[idx]);
-                    _weatherEffectsManager.UpdateEffectsLighting(particleLightColor);
-                }
+                _skyManager.UpdateMoon(moon.transform.forward, safeMoonTex, _lightingManager.MoonSkyboxColor, _bake_moonSize[idx]);
+            }
+        }
+
+        private void ApplyEffects(int idx, Color particleLightColor)
+        {
+            if (_weatherEffectsManager == null) return;
+
+            if (_bake_effectPrefab == null || idx >= _bake_effectPrefab.Length || _bake_effectPrefab[idx] == null)
+            {
+                _weatherEffectsManager.UpdateWeatherEffects(null, 0);
+                return;
+            }
+
+            if (_bake_effectHeight != null && idx < _bake_effectHeight.Length)
+            {
+                _weatherEffectsManager.SetHeightOffset(_bake_effectHeight[idx]);
+                _weatherEffectsManager.UpdateWeatherEffects(_bake_effectPrefab[idx], _bake_effectHeight[idx]);
+                _weatherEffectsManager.UpdateEffectsLighting(particleLightColor);
             }
         }
 

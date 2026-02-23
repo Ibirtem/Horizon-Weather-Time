@@ -33,6 +33,10 @@ Shader "Horizon/Procedural Skybox"
         _CloudScatter ("Light Absorption", Float) = 0.5
         [HideInInspector] _CloudWind ("Cloud Offset", Vector) = (0,0,0,0)
 
+        [Header(Horizon Fog Integration)]
+        [HideInInspector] _HorizonFogColor ("Fog Color", Color) = (0.5, 0.5, 0.5, 1)
+        [HideInInspector] _HorizonFogBlend ("Fog Blend Integrity", Range(0.0, 1.0)) = 0.0
+
         [Header(Atmosphere)]
         [HideInInspector] _Turbidity ("Turbidity", Range(1.0, 10.0)) = 2.0
         [HideInInspector] _Rayleigh ("Rayleigh", Range(0.0, 5.0)) = 1.0
@@ -85,6 +89,10 @@ Shader "Horizon/Procedural Skybox"
             float _MieDirectionalG;
             float _Exposure;
             float3 _SunPosition;
+
+            // Fog Integration
+            float4 _HorizonFogColor;
+            float _HorizonFogBlend;
 
             #define PI 3.14159265358
             #define PI_2 1.57079632679
@@ -402,6 +410,17 @@ Shader "Horizon/Procedural Skybox"
                         }
                     }
                 }
+
+                // --- 5. FOG BLENDING ---
+                float fogHeightFactor = abs(direction.y);
+                
+                float horizonMask = 1.0 - smoothstep(0.0, 0.25, fogHeightFactor);
+                
+                horizonMask = pow(horizonMask, 2.0);
+
+                float finalFogMask = horizonMask * _HorizonFogBlend;
+
+                finalColor = lerp(finalColor, _HorizonFogColor.rgb, finalFogMask);
 
                 finalColor *= _Exposure;
                 return half4(finalColor, 1.0);

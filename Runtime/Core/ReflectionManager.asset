@@ -16,7 +16,7 @@ MonoBehaviour:
     type: 2}
   udonAssembly: 
   assemblyError: 
-  sourceCsScript: {fileID: 11500000, guid: b85282b4992281a469026d25a5777db6, type: 3}
+  sourceCsScript: {fileID: 11500000, guid: 69248ff7ac0e185428a60f6bb96b5f0b, type: 3}
   scriptVersion: 2
   compiledVersion: 2
   behaviourSyncMode: 0
@@ -101,8 +101,7 @@ MonoBehaviour:
       Data: 6|UnityEngine.TooltipAttribute, UnityEngine.CoreModule
     - Name: tooltip
       Entry: 1
-      Data: How often (in seconds) the reflection probe should refresh. 0.5 to 2.0
-        is usually good.
+      Data: How often (in seconds) the reflection probe should refresh.
     - Name: 
       Entry: 8
       Data: 

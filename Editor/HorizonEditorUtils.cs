@@ -38,7 +38,7 @@ namespace BlackHorizon.HorizonWeatherTime
             GUI.Label(new Rect(contentRect.x, contentRect.y, contentRect.width, 24), "HORIZON", _headerTitleStyle);
             GUI.Label(new Rect(contentRect.x, contentRect.y + 24, contentRect.width, 20), subtitle.ToUpper(), _headerSubtitleStyle);
 
-            // 5. Version (Dynamic)
+            // 5. Version
             if (_cachedVersion == null) _cachedVersion = GetVersion(scriptReferenceForPath);
             GUI.Label(contentRect, $"v{_cachedVersion}", _headerVersionStyle);
 

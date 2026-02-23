@@ -58,6 +58,10 @@ namespace BlackHorizon.HorizonWeatherTime
         private int CloudTexID, CloudScaleID, CloudCoverageID, CloudWindID, CloudColorID, CloudShadowColorID;
         private int CloudAltitudeID, CloudDensityID, CloudDetailID, CloudWispID, CloudScatterID;
 
+        // Fog
+        private int FogColorID;
+        private int FogBlendID;
+
         private void InitializeShaderIDs()
         {
             // Atmosphere
@@ -96,6 +100,9 @@ namespace BlackHorizon.HorizonWeatherTime
             CloudDetailID = VRCShader.PropertyToID("_CloudDetail");
             CloudWispID = VRCShader.PropertyToID("_CloudWisp");
             CloudScatterID = VRCShader.PropertyToID("_CloudScatter");
+
+            FogColorID = VRCShader.PropertyToID("_HorizonFogColor");
+            FogBlendID = VRCShader.PropertyToID("_HorizonFogBlend");
 
             _areIDsInitialized = true;
         }
@@ -259,6 +266,25 @@ namespace BlackHorizon.HorizonWeatherTime
             _skyboxInstance.SetColor(CloudColorID, baseColor);
             _skyboxInstance.SetColor(CloudShadowColorID, shadowColor);
             _skyboxInstance.SetFloat(CloudScatterID, scatter);
+        }
+
+        /// <summary>
+        /// Updates the procedural skybox to seamlessly blend with the Unity global fog.
+        /// </summary>
+        public void UpdateSkyboxFog(bool isEnabled, Color fogColor, float blendAmount)
+        {
+            EnsureInitialized();
+            if (_skyboxInstance == null) return;
+
+            if (isEnabled)
+            {
+                _skyboxInstance.SetColor(FogColorID, fogColor);
+                _skyboxInstance.SetFloat(FogBlendID, blendAmount);
+            }
+            else
+            {
+                _skyboxInstance.SetFloat(FogBlendID, 0f);
+            }
         }
     }
 }
