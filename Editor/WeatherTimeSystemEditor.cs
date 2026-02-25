@@ -22,11 +22,22 @@ namespace BlackHorizon.HorizonWeatherTime
         private SerializedProperty _allowedWeatherProfilesProp;
         private SerializedProperty _currentProfileIndexProp;
 
+        // --- INDEPENDENT LAYER PROPERTIES ---
+        private SerializedProperty _lightingIndexProp;
+        private SerializedProperty _skyIndexProp;
+        private SerializedProperty _cloudIndexProp;
+        private SerializedProperty _moonIndexProp;
+        private SerializedProperty _fogIndexProp;
+        private SerializedProperty _effectsIndexProp;
+
         // System Refs
         private SerializedProperty _lightingManagerProp;
         private SerializedProperty _skyManagerProp;
         private SerializedProperty _weatherEffectsManagerProp;
         private SerializedProperty _reflectionManagerProp;
+
+        // UI State
+        private bool _showLayerOverrides = false;
 
         // VRChat State
         private bool _isVRChatProject = false;
@@ -37,7 +48,7 @@ namespace BlackHorizon.HorizonWeatherTime
         {
             _target = (WeatherTimeSystem)target;
 
-            // Linking Properties
+            // Linking Core Properties
             _useRealTimeProp = serializedObject.FindProperty("useRealTime");
             _timeZoneOffsetProp = serializedObject.FindProperty("timeZoneOffset");
             _sunTimeOfDayProp = serializedObject.FindProperty("_sunTimeOfDay");
@@ -47,6 +58,15 @@ namespace BlackHorizon.HorizonWeatherTime
             _allowedWeatherProfilesProp = serializedObject.FindProperty("weatherProfilesList");
             _currentProfileIndexProp = serializedObject.FindProperty("_currentProfileIndex");
 
+            // Linking Independent Layers
+            _lightingIndexProp = serializedObject.FindProperty("_lightingIndex");
+            _skyIndexProp = serializedObject.FindProperty("_skyIndex");
+            _cloudIndexProp = serializedObject.FindProperty("_cloudIndex");
+            _moonIndexProp = serializedObject.FindProperty("_moonIndex");
+            _fogIndexProp = serializedObject.FindProperty("_fogIndex");
+            _effectsIndexProp = serializedObject.FindProperty("_effectsIndex");
+
+            // Modules
             _lightingManagerProp = serializedObject.FindProperty("_lightingManager");
             _skyManagerProp = serializedObject.FindProperty("_skyManager");
             _weatherEffectsManagerProp = serializedObject.FindProperty("_weatherEffectsManager");
@@ -66,7 +86,22 @@ namespace BlackHorizon.HorizonWeatherTime
             // 1. HEADER
             HorizonEditorUtils.DrawHorizonHeader("Weather & Time System", this);
 
-            // 2. TIMELINE
+            // 2. SECTIONS
+            DrawTimelineSection();
+            DrawWeatherPresetsSection();
+            DrawCoreModulesSection();
+
+            // 3. FOOTER
+            EditorGUILayout.Space(10);
+            DrawVRChatStatus();
+
+            serializedObject.ApplyModifiedProperties();
+        }
+
+        // --- SECTION DRAWERS ---
+
+        private void DrawTimelineSection()
+        {
             HorizonEditorUtils.DrawSectionHeader("TIMELINE & SIMULATION");
 
             EditorGUILayout.BeginVertical(EditorStyles.helpBox);
@@ -103,28 +138,61 @@ namespace BlackHorizon.HorizonWeatherTime
                 serializedObject.ApplyModifiedProperties();
                 _target.Refresh();
             }
+        }
 
-            // 3. WEATHER
-            HorizonEditorUtils.DrawSectionHeader("ATMOSPHERE & PROFILES");
+        private void DrawWeatherPresetsSection()
+        {
+            HorizonEditorUtils.DrawSectionHeader("WEATHER PRESETS & LAYERS");
 
             if (_target.weatherProfilesList != null && _target.weatherProfilesList.Length > 0)
             {
                 var profileNames = _target.weatherProfilesList.Select(p => p != null ? p.name : " (None)").ToArray();
+                ValidateIndices(profileNames.Length);
 
+                EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+
+                // --- MASTER PRESET (MACRO) ---
                 EditorGUI.BeginChangeCheck();
-                Rect r = EditorGUILayout.GetControlRect();
-                EditorGUI.LabelField(new Rect(r.x, r.y, r.width * 0.4f, r.height), "Active Profile", EditorStyles.boldLabel);
-                _currentProfileIndexProp.intValue = EditorGUI.Popup(new Rect(r.x + r.width * 0.4f, r.y, r.width * 0.6f, r.height), _currentProfileIndexProp.intValue, profileNames);
-                if (EditorGUI.EndChangeCheck()) { serializedObject.ApplyModifiedProperties(); _target.Refresh(); }
+                int newMaster = EditorGUILayout.Popup("Master Preset", _currentProfileIndexProp.intValue, profileNames);
+                if (EditorGUI.EndChangeCheck())
+                {
+                    ApplyMasterPreset(newMaster);
+                }
+
+                // --- LAYER OVERRIDES (MIX & MATCH) ---
+                EditorGUILayout.Space(2);
+
+                GUILayout.Label("Layer Overrides", EditorStyles.boldLabel);
+                EditorGUI.indentLevel++;
+                EditorGUI.BeginChangeCheck();
+
+                DrawLayerDropdown("Lighting", _lightingIndexProp, profileNames);
+                DrawLayerDropdown("Sky & Stars", _skyIndexProp, profileNames);
+                DrawLayerDropdown("Clouds", _cloudIndexProp, profileNames);
+                DrawLayerDropdown("Moon", _moonIndexProp, profileNames);
+                DrawLayerDropdown("Fog", _fogIndexProp, profileNames);
+                DrawLayerDropdown("Effects", _effectsIndexProp, profileNames);
+
+                if (EditorGUI.EndChangeCheck())
+                {
+                    serializedObject.ApplyModifiedProperties();
+                    _target.Refresh();
+                }
+                EditorGUI.indentLevel--;
+
+                EditorGUILayout.EndVertical();
+                EditorGUILayout.Space(4);
             }
             else
             {
                 EditorGUILayout.HelpBox("No Profiles Loaded! Add Weather Profiles below.", MessageType.Warning);
             }
 
-            EditorGUILayout.PropertyField(_allowedWeatherProfilesProp, true);
+            EditorGUILayout.PropertyField(_allowedWeatherProfilesProp, new GUIContent("Loaded Profiles List"), true);
+        }
 
-            // 4. CORE
+        private void DrawCoreModulesSection()
+        {
             HorizonEditorUtils.DrawSectionHeader("CORE MODULES");
             GUI.enabled = false;
             EditorGUILayout.PropertyField(_lightingManagerProp);
@@ -132,12 +200,75 @@ namespace BlackHorizon.HorizonWeatherTime
             EditorGUILayout.PropertyField(_weatherEffectsManagerProp);
             EditorGUILayout.PropertyField(_reflectionManagerProp);
             GUI.enabled = true;
+        }
 
-            // Footer
-            EditorGUILayout.Space(10);
-            DrawVRChatStatus();
+        // --- HELPERS ---
+
+        private void ValidateIndices(int length)
+        {
+            int maxIdx = Mathf.Max(0, length - 1);
+
+            ClampProp(_currentProfileIndexProp, maxIdx);
+            ClampProp(_lightingIndexProp, maxIdx);
+            ClampProp(_skyIndexProp, maxIdx);
+            ClampProp(_cloudIndexProp, maxIdx);
+            ClampProp(_moonIndexProp, maxIdx);
+            ClampProp(_fogIndexProp, maxIdx);
+            ClampProp(_effectsIndexProp, maxIdx);
+        }
+
+        private static void ClampProp(SerializedProperty prop, int max)
+        {
+            int clamped = Mathf.Clamp(prop.intValue, 0, max);
+            if (prop.intValue != clamped)
+            {
+                prop.intValue = clamped;
+            }
+        }
+
+        private void ApplyMasterPreset(int newIndex)
+        {
+            _currentProfileIndexProp.intValue = newIndex;
+            _lightingIndexProp.intValue = newIndex;
+            _skyIndexProp.intValue = newIndex;
+            _cloudIndexProp.intValue = newIndex;
+            _moonIndexProp.intValue = newIndex;
+            _fogIndexProp.intValue = newIndex;
+            _effectsIndexProp.intValue = newIndex;
 
             serializedObject.ApplyModifiedProperties();
+            _target.SetWeatherProfile(newIndex);
+            EditorUtility.SetDirty(_target);
+            _target.Refresh();
+        }
+
+        /// <summary>
+        /// Draws a dropdown for a specific layer.
+        /// </summary>
+        private void DrawLayerDropdown(string label, SerializedProperty indexProp, string[] options)
+        {
+            int[] indices = Enumerable.Range(0, options.Length).ToArray();
+            bool isOverride = indexProp.intValue != _currentProfileIndexProp.intValue;
+
+            EditorGUILayout.BeginHorizontal();
+
+            Color originalColor = GUI.color;
+            if (isOverride) GUI.color = new Color(1f, 0.92f, 0.75f);
+
+            indexProp.intValue = EditorGUILayout.IntPopup(label, indexProp.intValue, options, indices);
+
+            GUI.color = originalColor;
+
+            if (isOverride)
+            {
+                if (GUILayout.Button("↺", GUILayout.Width(24), GUILayout.Height(18)))
+                {
+                    indexProp.intValue = _currentProfileIndexProp.intValue;
+                    GUI.FocusControl(null);
+                }
+            }
+
+            EditorGUILayout.EndHorizontal();
         }
 
         private void DrawTimeDebugInfo()
@@ -150,99 +281,132 @@ namespace BlackHorizon.HorizonWeatherTime
             }
         }
 
+        private void DrawVRChatStatus()
+        {
+            if (_isVRChatProject)
+            {
+                EditorGUILayout.BeginHorizontal(EditorStyles.helpBox);
+                GUILayout.Label("VRChat Integration", EditorStyles.boldLabel);
+                GUILayout.FlexibleSpace();
+                GUILayout.Label(_integrationActive ? "ACTIVE" : "INACTIVE", _integrationActive ? EditorStyles.boldLabel : EditorStyles.miniLabel);
+                EditorGUILayout.EndHorizontal();
+            }
+        }
+
         // ================================================================
-        // DEPENDENCY & ASSET CHECKS
+        // DEPENDENCY & ASSET CHECKS (MODULAR ARCHITECTURE)
         // ================================================================
+
+        private const string PROFILES_ROOT = "Assets/Horizon Weather & Time/Weather Profiles";
+        private const string PRESETS_DIR = PROFILES_ROOT + "/Presets";
+        private const string MODULES_DIR = PROFILES_ROOT + "/Modules";
 
         private void CheckAndConfigureDependencies()
         {
-            var defaultProfiles = new List<WeatherProfile>();
+            var defaultPresets = new List<WeatherProfile>();
 
-            // 1. Clear
-            WeatherProfile clearProfile = CheckAndCreateDefaultProfile();
-            if (clearProfile != null)
-            {
-                defaultProfiles.Add(clearProfile);
-                CheckAndAssignDefaultStarsTexture(clearProfile);
-                CheckAndAssignDefaultMoonTexture(clearProfile);
-            }
+            // 1. CLEAR PRESET
+            WeatherProfile clear = CheckAndCreatePreset("Default Clear", "Clear",
+                (p) =>
+                {
+                    p.skyProfile.exposure = 0.3f;
+                    p.skyProfile.turbidity = 5f;
+                });
 
-            // 2. Snow
-            WeatherProfile snowProfile = CheckAndCreateDefaultSnowProfile();
-            if (snowProfile != null)
-            {
-                defaultProfiles.Add(snowProfile);
-                CheckAndAssignDefaultStarsTexture(snowProfile);
-                CheckAndAssignDefaultMoonTexture(snowProfile);
-            }
+            // 2. SNOW PRESET
+            WeatherProfile snow = CheckAndCreatePreset("Default Snow", "Snow",
+                (p) =>
+                {
+                    p.lightingProfile.sunColorZenith = new Color(0.8f, 0.85f, 0.95f);
+                    p.effectsProfile.weatherEffectPrefab = Resources.Load<GameObject>("Prefabs/SnowEffect");
+                }, "Overcast", "Overcast");
 
-            // 3. Rain
-            WeatherProfile rainProfile = CheckAndCreateDefaultRainProfile();
-            if (rainProfile != null)
-            {
-                defaultProfiles.Add(rainProfile);
-                CheckAndAssignDefaultStarsTexture(rainProfile);
-                CheckAndAssignDefaultMoonTexture(rainProfile);
-            }
+            // 3. RAIN PRESET
+            WeatherProfile rain = CheckAndCreatePreset("Default Rain", "Rain",
+                (p) =>
+                {
+                    p.lightingProfile.sunIntensity = 0.5f;
+                    p.lightingProfile.sunColorZenith = new Color(0.6f, 0.65f, 0.7f);
+                    p.lightingProfile.dayAmbientColor = new Color(0.3f, 0.35f, 0.4f);
+                    p.cloudProfile.coverage = 0.85f;
+                    p.cloudProfile.density = 2.0f;
+                    p.cloudProfile.baseColor = new Color(0.3f, 0.3f, 0.35f);
+                    p.cloudProfile.shadowColor = new Color(0.1f, 0.1f, 0.15f);
+                    p.effectsProfile.weatherEffectPrefab = Resources.Load<GameObject>("Prefabs/RainEffect");
+                }, "Overcast", "Storm");
 
-            EnsureProfilesAreInAllowedList(defaultProfiles);
+            if (clear != null) defaultPresets.Add(clear);
+            if (snow != null) defaultPresets.Add(snow);
+            if (rain != null) defaultPresets.Add(rain);
 
-            CheckAndGenerateCloudTexture(defaultProfiles);
-
+            EnsureProfilesAreInAllowedList(defaultPresets);
+            CheckAndGenerateCloudTexture(defaultPresets);
             CheckAndConfigureSkyboxMaterial();
             CheckAndConfigureParticleAssets();
+
+            AssetDatabase.SaveAssets();
         }
 
-        private void CheckAndConfigureSkyboxMaterial()
+        // --- FACTORY METHODS ---
+
+        private T GetOrCreateModule<T>(string moduleFolder, string assetName) where T : ScriptableObject
         {
-            if (_skyManagerProp.objectReferenceValue == null) return;
-            SkyManager skyManager = (SkyManager)_skyManagerProp.objectReferenceValue;
-            SerializedObject skyManagerSO = new SerializedObject(skyManager);
-            SerializedProperty skyboxMaterialProp = skyManagerSO.FindProperty("skyboxMaterial");
-            if (skyboxMaterialProp.objectReferenceValue != null) return;
+            string dir = $"{MODULES_DIR}/{moduleFolder}";
+            if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
 
-            const string fullPath = "Assets/Horizon Weather & Time/Materials/Horizon Skybox.mat";
-            Material existingMat = AssetDatabase.LoadAssetAtPath<Material>(fullPath);
-            if (existingMat == null)
+            string path = $"{dir}/{assetName}.asset";
+            T module = AssetDatabase.LoadAssetAtPath<T>(path);
+
+            if (module == null)
             {
-                if (!Directory.Exists("Assets/Horizon Weather & Time/Materials")) Directory.CreateDirectory("Assets/Horizon Weather & Time/Materials");
-                Shader shader = Shader.Find("Horizon/Procedural Skybox");
-                if (shader != null)
-                {
-                    existingMat = new Material(shader);
-                    AssetDatabase.CreateAsset(existingMat, fullPath);
-                    Debug.Log($"<b><color=#33FF33>[LOG]</color></b> <color=white>[WeatherTimeSystem] Created default Skybox Material.</color>");
-                }
+                module = CreateInstance<T>();
+                AssetDatabase.CreateAsset(module, path);
             }
-            skyboxMaterialProp.objectReferenceValue = existingMat;
-            skyManagerSO.ApplyModifiedProperties();
+            return module;
         }
 
-        private WeatherProfile CheckAndCreateDefaultProfile()
+        private WeatherProfile CheckAndCreatePreset(string presetName, string weatherType, Action<WeatherProfile> onInitialize = null, string skyType = null, string cloudType = null)
         {
-            const string fullPath = "Assets/Horizon Weather & Time/Weather Profiles/Default Clear.asset";
-            WeatherProfile p = AssetDatabase.LoadAssetAtPath<WeatherProfile>(fullPath);
-            if (p == null)
+            if (!Directory.Exists(PRESETS_DIR)) Directory.CreateDirectory(PRESETS_DIR);
+
+            string path = $"{PRESETS_DIR}/{presetName}.asset";
+            WeatherProfile preset = AssetDatabase.LoadAssetAtPath<WeatherProfile>(path);
+
+            if (preset == null)
             {
-                if (!Directory.Exists("Assets/Horizon Weather & Time/Weather Profiles")) Directory.CreateDirectory("Assets/Horizon Weather & Time/Weather Profiles");
-                p = CreateInstance<WeatherProfile>(); p.profileName = "Default Clear"; p.skySettings.exposure = 0.3f; p.skySettings.turbidity = 5f;
-                AssetDatabase.CreateAsset(p, fullPath);
+                preset = CreateInstance<WeatherProfile>();
+                preset.profileName = presetName;
+
+                skyType = skyType ?? weatherType;
+                cloudType = cloudType ?? weatherType;
+
+                preset.lightingProfile = GetOrCreateModule<LightingProfile>("Lighting", $"Lighting_{weatherType}");
+                preset.skyProfile = GetOrCreateModule<SkyProfile>("Sky", $"Sky_{skyType}");
+                preset.cloudProfile = GetOrCreateModule<CloudProfile>("Clouds", $"Clouds_{cloudType}");
+                preset.moonProfile = GetOrCreateModule<MoonProfile>("Moon", "Moon_Default");
+                preset.fogProfile = GetOrCreateModule<FogProfile>("Fog", $"Fog_{weatherType}");
+                preset.effectsProfile = GetOrCreateModule<EffectsProfile>("Effects", $"Effects_{weatherType}");
+
+                onInitialize?.Invoke(preset);
+
+                EditorUtility.SetDirty(preset.lightingProfile);
+                EditorUtility.SetDirty(preset.skyProfile);
+                EditorUtility.SetDirty(preset.cloudProfile);
+                EditorUtility.SetDirty(preset.moonProfile);
+                EditorUtility.SetDirty(preset.fogProfile);
+                EditorUtility.SetDirty(preset.effectsProfile);
+
+                AssetDatabase.CreateAsset(preset, path);
+                EditorUtility.SetDirty(preset);
+
+                CheckAndAssignDefaultStarsTexture(preset);
+                CheckAndAssignDefaultMoonTexture(preset);
             }
-            return p;
+
+            return preset;
         }
 
-        private WeatherProfile CheckAndCreateDefaultSnowProfile()
-        {
-            const string fullPath = "Assets/Horizon Weather & Time/Weather Profiles/Default Snow.asset";
-            WeatherProfile p = AssetDatabase.LoadAssetAtPath<WeatherProfile>(fullPath);
-            var prefab = Resources.Load<GameObject>("Prefabs/SnowEffect");
-            if (p == null && prefab != null)
-            {
-                p = CreateInstance<WeatherProfile>(); p.name = "Default Snow"; p.profileName = "Default Snow"; p.lightSettings.sunColorZenith = new Color(0.8f, 0.85f, 0.95f); p.effectsSettings.weatherEffectPrefab = prefab;
-                AssetDatabase.CreateAsset(p, fullPath);
-            }
-            return p;
-        }
+        // --- ASSET HELPERS ---
 
         private void CheckAndGenerateCloudTexture(List<WeatherProfile> profiles)
         {
@@ -257,11 +421,10 @@ namespace BlackHorizon.HorizonWeatherTime
 
             foreach (var p in profiles)
             {
-                if (p != null && p.cloudSettings.cloudNoiseTexture == null)
+                if (p != null && p.cloudProfile != null && p.cloudProfile.cloudNoiseTexture == null)
                 {
-                    p.cloudSettings.cloudNoiseTexture = cloudTex;
-                    EditorUtility.SetDirty(p);
-                    Debug.Log($"<b><color=#33FF33>[LOG]</color></b> <color=white>[WeatherTimeSystem] Auto-assigned Cloud Noise to profile '{p.name}'.</color>");
+                    p.cloudProfile.cloudNoiseTexture = cloudTex;
+                    EditorUtility.SetDirty(p.cloudProfile);
                 }
             }
         }
@@ -271,14 +434,8 @@ namespace BlackHorizon.HorizonWeatherTime
             if (profiles.Count == 0) return;
 
             List<UnityEngine.Object> allowedList;
-            if (_target.weatherProfilesList == null)
-            {
-                allowedList = new List<UnityEngine.Object>();
-            }
-            else
-            {
-                allowedList = new List<UnityEngine.Object>(_target.weatherProfilesList);
-            }
+            if (_target.weatherProfilesList == null) allowedList = new List<UnityEngine.Object>();
+            else allowedList = new List<UnityEngine.Object>(_target.weatherProfilesList);
 
             bool listModified = false;
             foreach (var profile in profiles)
@@ -300,23 +457,52 @@ namespace BlackHorizon.HorizonWeatherTime
 
         private void CheckAndAssignDefaultStarsTexture(WeatherProfile p)
         {
-            if (p.skySettings.starsSettings.starsTexture != null) return;
+            if (p.skyProfile.starsTexture != null) return;
             string[] guids = AssetDatabase.FindAssets("starmap_horizon_8k t:Texture");
-            if (guids.Length > 0) { p.skySettings.starsSettings.starsTexture = AssetDatabase.LoadAssetAtPath<Texture>(AssetDatabase.GUIDToAssetPath(guids[0])); EditorUtility.SetDirty(p); }
+            if (guids.Length > 0) { p.skyProfile.starsTexture = AssetDatabase.LoadAssetAtPath<Texture>(AssetDatabase.GUIDToAssetPath(guids[0])); EditorUtility.SetDirty(p.skyProfile); }
         }
 
         private void CheckAndAssignDefaultMoonTexture(WeatherProfile p)
         {
-            if (p.moonSettings.moonTexture != null) return;
+            if (p.moonProfile.moonTexture != null) return;
 
             string[] guids = AssetDatabase.FindAssets("lroc_color_poles_1k t:Texture");
 
             if (guids.Length > 0)
             {
                 string path = AssetDatabase.GUIDToAssetPath(guids[0]);
-                p.moonSettings.moonTexture = AssetDatabase.LoadAssetAtPath<Texture>(path);
-                EditorUtility.SetDirty(p);
-                Debug.Log($"<b><color=#33FF33>[LOG]</color></b> <color=white>[WeatherTimeSystem] Auto-assigned Moon texture to profile '{p.name}'.</color>");
+
+                p.moonProfile.moonTexture = AssetDatabase.LoadAssetAtPath<Texture2D>(path);
+
+                EditorUtility.SetDirty(p.moonProfile);
+            }
+        }
+
+        private void CheckAndConfigureSkyboxMaterial()
+        {
+            if (_skyManagerProp.objectReferenceValue == null) return;
+            SkyManager skyManager = (SkyManager)_skyManagerProp.objectReferenceValue;
+            SerializedObject skyManagerSO = new SerializedObject(skyManager);
+            SerializedProperty skyboxMaterialProp = skyManagerSO.FindProperty("skyboxMaterial");
+            if (skyboxMaterialProp.objectReferenceValue != null) return;
+
+            const string fullPath = "Assets/Horizon Weather & Time/Materials/Horizon Skybox.mat";
+            Material existingMat = AssetDatabase.LoadAssetAtPath<Material>(fullPath);
+            if (existingMat == null)
+            {
+                if (!Directory.Exists("Assets/Horizon Weather & Time/Materials")) Directory.CreateDirectory("Assets/Horizon Weather & Time/Materials");
+                Shader shader = Shader.Find("Horizon/Procedural Skybox");
+                if (shader != null)
+                {
+                    existingMat = new Material(shader);
+                    AssetDatabase.CreateAsset(existingMat, fullPath);
+                }
+            }
+
+            if (existingMat != null)
+            {
+                skyboxMaterialProp.objectReferenceValue = existingMat;
+                skyManagerSO.ApplyModifiedProperties();
             }
         }
 
@@ -488,46 +674,7 @@ namespace BlackHorizon.HorizonWeatherTime
             }
         }
 
-        private WeatherProfile CheckAndCreateDefaultRainProfile()
-        {
-            const string fullPath = "Assets/Horizon Weather & Time/Weather Profiles/Default Rain.asset";
-            WeatherProfile p = AssetDatabase.LoadAssetAtPath<WeatherProfile>(fullPath);
-
-            var prefab = Resources.Load<GameObject>("Prefabs/RainEffect");
-
-            if (p == null)
-            {
-                if (!Directory.Exists("Assets/Horizon Weather & Time/Weather Profiles")) Directory.CreateDirectory("Assets/Horizon Weather & Time/Weather Profiles");
-
-                p = CreateInstance<WeatherProfile>();
-                p.name = "Default Rain";
-                p.profileName = "Heavy Rain";
-
-                p.lightSettings.sunIntensity = 0.5f;
-                p.lightSettings.sunColorZenith = new Color(0.6f, 0.65f, 0.7f);
-                p.lightSettings.dayAmbientColor = new Color(0.3f, 0.35f, 0.4f);
-
-                p.cloudSettings.coverage = 0.85f;
-                p.cloudSettings.density = 2.0f;
-                p.cloudSettings.baseColor = new Color(0.3f, 0.3f, 0.35f);
-                p.cloudSettings.shadowColor = new Color(0.1f, 0.1f, 0.15f);
-
-                p.effectsSettings.weatherEffectPrefab = prefab;
-
-                AssetDatabase.CreateAsset(p, fullPath);
-            }
-            else if (p.effectsSettings.weatherEffectPrefab == null && prefab != null)
-            {
-                p.effectsSettings.weatherEffectPrefab = prefab;
-                EditorUtility.SetDirty(p);
-            }
-
-            return p;
-        }
-
-        // ================================================================
-        // AUTO-SETUP FOR VRCHAT
-        // ================================================================
+        // --- VRCHAT INTEGRATION ---
 
         private void CheckAndAutoSetupVRChatIntegration()
         {
@@ -642,18 +789,6 @@ namespace BlackHorizon.HorizonWeatherTime
                 }
             }
             catch { /* Ignoring auto-linking errors */ }
-        }
-
-        private void DrawVRChatStatus()
-        {
-            if (_isVRChatProject)
-            {
-                EditorGUILayout.BeginHorizontal(EditorStyles.helpBox);
-                GUILayout.Label("VRChat Integration", EditorStyles.boldLabel);
-                GUILayout.FlexibleSpace();
-                GUILayout.Label(_integrationActive ? "ACTIVE" : "INACTIVE", _integrationActive ? EditorStyles.boldLabel : EditorStyles.miniLabel);
-                EditorGUILayout.EndHorizontal();
-            }
         }
     }
 }
