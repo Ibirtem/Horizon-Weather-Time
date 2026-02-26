@@ -2,9 +2,13 @@ Shader "Horizon/Procedural Skybox"
 {
     Properties
     {
-        [Header(Stars)]
-        [NoScaleOffset] _StarsTex ("Stars Texture (LatLong)", 2D) = "black" {}
-        [HideInInspector] _StarsRotation ("Stars Rotation", Range(0.0, 360.0)) = 0.0
+        [Header(Deep Space)]
+        [NoScaleOffset] _StarsTex ("Stars Map (EXR)", 2D) = "black" {}
+        [NoScaleOffset] _MilkyWayTex ("Milky Way Map (EXR)", 2D) = "black" {}
+        
+        [HideInInspector] _StarfieldRotation ("Rotation (Euler)", Vector) = (0,0,0,0)
+        [HideInInspector] _StarsIntensity ("Stars Intensity", Float) = 1.0
+        [HideInInspector] _MilkyWayIntensity ("MW Intensity", Float) = 1.0
         [HideInInspector] _StarsFade ("Stars Fade", Range(0.0, 1.0)) = 1.0
 
         [Header(Stars Twinkle)]
@@ -21,9 +25,10 @@ Shader "Horizon/Procedural Skybox"
         [HideInInspector] _MoonPosition ("Moon Position", Vector) = (0.0, -0.5, 0.0, 0.0)
 
         [Header(Volumetric Clouds)]
-        [NoScaleOffset] _WeatherMapTex ("Weather Map (RG)", 2D) = "black" {}
+        [NoScaleOffset] _WeatherMapTex ("Weather Map (RGBA)", 2D) = "black" {}
         [NoScaleOffset] _BlueNoiseTex ("Blue Noise (Dither)", 2D) = "gray" {}
         [NoScaleOffset] _CloudTex ("Cloud Noise (RGBA)", 2D) = "black" {}
+        
         _CloudColor ("Cloud Lit Color", Color) = (0.9,0.9,0.9,1)
         _CloudShadowColor ("Cloud Shadow Color", Color) = (0.3,0.3,0.35,1)
         _CloudAltitude("Altitude Base (km)", Float) = 3.0
@@ -61,10 +66,15 @@ Shader "Horizon/Procedural Skybox"
 
             #include "UnityCG.cginc"
             
-            // Stars
+            // Deep Space
             sampler2D _StarsTex;
-            float _StarsRotation;
+            sampler2D _MilkyWayTex;
+            float3 _StarfieldRotation;
+            float _StarsIntensity;
+            float _MilkyWayIntensity;
             float _StarsFade;
+
+            // Twinkle
             float _TwinkleScale;
             int _TwinkleDetail;
             float _TwinkleSharpness;
@@ -81,6 +91,7 @@ Shader "Horizon/Procedural Skybox"
             sampler2D _WeatherMapTex;
             sampler2D _BlueNoiseTex;
             sampler2D _CloudTex;
+            
             float4 _CloudColor, _CloudShadowColor;
             float _CloudAltitude, _CloudScale, _CloudCoverage, _CloudDensity;
             float _CloudDetail, _CloudWisp, _CloudScatter;
@@ -140,11 +151,39 @@ Shader "Horizon/Procedural Skybox"
                 if (zenithAngleCos < -0.1) return 0.0;
                 return EE * max(0.0, 1.0 - pow(E, -((cutoffAngle - acos(clamp(zenithAngleCos, -0.1, 1.0))) / steepness)));
             }
+
             float3 totalMie(float T) { return 0.434 * (0.2 * T) * 10E-18 * MieConst; }
             float rayleighPhase(float cosTheta) { return THREE_OVER_SIXTEENPI * (1.0 + cosTheta * cosTheta); }
             float hgPhase(float cosTheta, float g) {
                 float g2 = g * g;
                 return ONE_OVER_FOURPI * ((1.0 - g2) / pow(1.0 - 2.0 * g * cosTheta + g2, 1.5));
+            }
+
+            // --- Rotation Utils ---
+            float3 RotateSphere(float3 dir, float3 euler) {
+                float3 rad = euler * (PI / 180.0);
+                float3 c = cos(rad);
+                float3 s = sin(rad);
+                
+                // Rotation Z (Roll)
+                float3 rotZ;
+                rotZ.x = dir.x * c.z - dir.y * s.z;
+                rotZ.y = dir.x * s.z + dir.y * c.z;
+                rotZ.z = dir.z;
+
+                // Rotation X (Tilt)
+                float3 rotX;
+                rotX.x = rotZ.x;
+                rotX.y = rotZ.y * c.x - rotZ.z * s.x;
+                rotX.z = rotZ.y * s.x + rotZ.z * c.x;
+
+                // Rotation Y (Spin/Time)
+                float3 rotY;
+                rotY.x = rotX.x * c.y - rotX.z * s.y;
+                rotY.y = rotX.y;
+                rotY.z = rotX.x * s.y + rotX.z * c.y;
+
+                return rotY;
             }
 
             // --- Cloud Volumetrics ---
@@ -275,23 +314,30 @@ Shader "Horizon/Procedural Skybox"
                 float3 skyColor = (Lin + L0) * 0.04 + float3(0.0, 0.00005, 0.00005);
                 float3 finalColor = pow(skyColor, 1.0 / (1.2 + (1.2 * i.sunfade)));
 
-                // --- 2. Stars ---
+                // --- 2. Deep Space (Stars + Milky Way) ---
                 if (_StarsFade > 0.0) {
-                    float rotRad = _StarsRotation * (PI / 180.0);
-                    float s = sin(rotRad); float c = cos(rotRad);
-                    float3 rotatedDir = direction;
-                    float oldX = rotatedDir.x;
-                    rotatedDir.x = oldX * c - rotatedDir.z * s;
-                    rotatedDir.z = oldX * s + rotatedDir.z * c;
+                    float3 spaceDir = RotateSphere(direction, _StarfieldRotation);
 
-                    float2 uv = float2(0.5 + atan2(rotatedDir.z, rotatedDir.x) / (2 * PI), 0.5 - asin(rotatedDir.y) / PI);
-                    float3 starCol = tex2D(_StarsTex, uv).rgb;
+                    float2 uv = float2(0.5 + atan2(spaceDir.z, spaceDir.x) / (2.0 * PI), 
+                                       0.5 - asin(spaceDir.y) / PI);
                     
-                    float softNoise = fbm(rotatedDir * _TwinkleScale + float3(0, 0, _Time.w * _TwinkleSpeed), _TwinkleDetail);
+
+                    float2 ddxUV = ddx(uv);
+                    float2 ddyUV = ddy(uv);
+
+                    if (length(ddxUV) > 0.5) ddxUV = 0;
+                    if (length(ddyUV) > 0.5) ddyUV = 0;
+
+                    float3 starCol = tex2Dgrad(_StarsTex, uv, ddxUV, ddyUV).rgb * _StarsIntensity;
+                    float3 mwCol = tex2Dgrad(_MilkyWayTex, uv, ddxUV, ddyUV).rgb * _MilkyWayIntensity;
+
+                    float softNoise = fbm(spaceDir * _TwinkleScale + float3(0, 0, _Time.w * _TwinkleSpeed), _TwinkleDetail);
                     float halfWidth = 0.5 / _TwinkleSharpness;
                     float twinkleMask = smoothstep(0.5 - halfWidth, 0.5 + halfWidth, softNoise) * _TwinkleStrength;
+
+                    float3 finalSpace = (starCol * (1.0 - twinkleMask)) + (mwCol * (1.0 - twinkleMask * 0.1));
                     
-                    finalColor += starCol * (1.0 - twinkleMask) * _StarsFade;
+                    finalColor += finalSpace * _StarsFade;
                 }
 
                 // --- 3. Moon ---

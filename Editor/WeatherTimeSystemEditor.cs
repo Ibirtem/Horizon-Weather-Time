@@ -387,6 +387,13 @@ namespace BlackHorizon.HorizonWeatherTime
                 preset.fogProfile = GetOrCreateModule<FogProfile>("Fog", $"Fog_{weatherType}");
                 preset.effectsProfile = GetOrCreateModule<EffectsProfile>("Effects", $"Effects_{weatherType}");
 
+                if (skyType == "Overcast")
+                {
+                    preset.skyProfile.turbidity = 10f;
+                    preset.skyProfile.exposure = 0.15f;
+                    preset.skyProfile.rayleigh = 0.5f;
+                }
+
                 onInitialize?.Invoke(preset);
 
                 EditorUtility.SetDirty(preset.lightingProfile);
@@ -399,11 +406,57 @@ namespace BlackHorizon.HorizonWeatherTime
                 AssetDatabase.CreateAsset(preset, path);
                 EditorUtility.SetDirty(preset);
 
-                CheckAndAssignDefaultStarsTexture(preset);
+                CheckAndAssignDeepSpaceAssets(preset);
                 CheckAndAssignDefaultMoonTexture(preset);
             }
 
             return preset;
+        }
+
+        /// <summary>
+        /// Automatically finds and assigns Star and Milky Way textures based on naming conventions.
+        /// </summary>
+        private void CheckAndAssignDeepSpaceAssets(WeatherProfile p)
+        {
+            if (p.skyProfile == null) return;
+
+            bool isDirty = false;
+            string starsFolder = "Assets/Horizon Weather & Time/Runtime/Textures/Sky";
+            if (p.skyProfile.starsTexture == null)
+            {
+                string[] guids = AssetDatabase.FindAssets("stars t:Texture2D", new[] { starsFolder });
+                foreach (var guid in guids)
+                {
+                    string path = AssetDatabase.GUIDToAssetPath(guid);
+                    Texture tex = AssetDatabase.LoadAssetAtPath<Texture>(path);
+                    if (tex != null && tex is Texture2D && !(tex is Cubemap))
+                    {
+                        p.skyProfile.starsTexture = tex;
+                        isDirty = true;
+                        break;
+                    }
+                }
+            }
+
+            if (p.skyProfile.milkyWayTexture == null)
+            {
+                string[] guids = AssetDatabase.FindAssets("milkyway t:Texture2D", new[] { starsFolder });
+                foreach (var guid in guids)
+                {
+                    string path = AssetDatabase.GUIDToAssetPath(guid);
+                    Texture tex = AssetDatabase.LoadAssetAtPath<Texture>(path);
+                    if (tex != null && tex is Texture2D && !(tex is Cubemap))
+                    {
+                        p.skyProfile.milkyWayTexture = tex;
+                        isDirty = true;
+                        break;
+                    }
+                }
+            }
+
+            if (p.skyProfile.starsIntensity <= 0.01f) { p.skyProfile.starsIntensity = 1.0f; isDirty = true; }
+            if (p.skyProfile.starsIntensity <= 0f) { p.skyProfile.starsIntensity = 1.0f; isDirty = true; }
+            if (p.skyProfile.milkyWayIntensity <= 0f) { p.skyProfile.milkyWayIntensity = 1.0f; isDirty = true; }            if (isDirty) EditorUtility.SetDirty(p.skyProfile);
         }
 
         // --- ASSET HELPERS ---

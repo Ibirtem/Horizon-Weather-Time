@@ -40,7 +40,12 @@ namespace BlackHorizon.HorizonWeatherTime
 
         // Stars
         private int StarsTexID;
-        private int StarsRotationID;
+        private int MilkyWayTexID;
+        private int StarfieldRotationID;
+        private int StarsIntensityID;
+        private int MilkyWayIntensityID;
+
+        // Twinkle
         private int StarsFadeID;
         private int TwinkleScaleID;
         private int TwinkleDetailID;
@@ -76,7 +81,11 @@ namespace BlackHorizon.HorizonWeatherTime
 
             // Stars
             StarsTexID = VRCShader.PropertyToID("_StarsTex");
-            StarsRotationID = VRCShader.PropertyToID("_StarsRotation");
+            MilkyWayTexID = VRCShader.PropertyToID("_MilkyWayTex");
+            StarfieldRotationID = VRCShader.PropertyToID("_StarfieldRotation");
+            StarsIntensityID = VRCShader.PropertyToID("_StarsIntensity");
+            MilkyWayIntensityID = VRCShader.PropertyToID("_MilkyWayIntensity");
+
             StarsFadeID = VRCShader.PropertyToID("_StarsFade");
             TwinkleScaleID = VRCShader.PropertyToID("_TwinkleScale");
             TwinkleDetailID = VRCShader.PropertyToID("_TwinkleDetail");
@@ -213,30 +222,37 @@ namespace BlackHorizon.HorizonWeatherTime
             _skyboxInstance.SetFloat(MoonSizeID, moonSize);
         }
 
-        public void UpdateStars(float timeOfDay, Vector3 sunDirection, Texture starsTex, float rotationSpeed, float twinkleScale, float twinkleSpeed, float twinkleStrength)
+        public void UpdateStars(float timeOfDay, Vector3 sunDirection,
+            Texture starsTex, Texture mwTex,
+            Vector3 alignment, float rotationSpeed,
+            float starsInt, float mwInt,
+            float twinkleScale, float twinkleSpeed, float twinkleStrength)
         {
             EnsureInitialized();
             if (_skyboxInstance == null) return;
-
-            if (starsTex == null)
-            {
-                _skyboxInstance.SetFloat(StarsFadeID, 0f);
-                return;
-            }
 
             if (_currentStarsTexture != starsTex)
             {
                 _skyboxInstance.SetTexture(StarsTexID, starsTex);
                 _currentStarsTexture = starsTex;
             }
+            if (mwTex != null) _skyboxInstance.SetTexture(MilkyWayTexID, mwTex);
 
+            Vector3 finalRotation = alignment;
+            finalRotation.y += timeOfDay * 360f * rotationSpeed;
+
+            _skyboxInstance.SetVector(StarfieldRotationID, finalRotation);
+
+            // Calculate Fade (Day/Night)
             float sunHeight = Mathf.InverseLerp(-0.1f, 0.15f, -sunDirection.y);
             float starsAlpha = 1f - sunHeight;
             _skyboxInstance.SetFloat(StarsFadeID, starsAlpha);
 
-            float rotationY = timeOfDay * 360f * rotationSpeed;
-            _skyboxInstance.SetFloat(StarsRotationID, rotationY);
+            // Set Intensities
+            _skyboxInstance.SetFloat(StarsIntensityID, starsInt);
+            _skyboxInstance.SetFloat(MilkyWayIntensityID, mwInt);
 
+            // Twinkle
             _skyboxInstance.SetFloat(TwinkleScaleID, twinkleScale);
             _skyboxInstance.SetInt(TwinkleDetailID, 3);
             _skyboxInstance.SetFloat(TwinkleSpeedID, twinkleSpeed);

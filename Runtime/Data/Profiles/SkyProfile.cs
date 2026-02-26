@@ -26,13 +26,26 @@ namespace BlackHorizon.HorizonWeatherTime
         [Range(0f, 8f)]
         public float exposure = 0.3f;
 
-        [Header("Stars Base")]
-        [Tooltip("The texture used for the starfield. (Longitude-latitude format)")]
+        [Header("Deep Space")]
+        [Tooltip("Main Star Map (Stars only). Celestial/Equatorial Coordinates (EXR preferred).")]
         public Texture starsTexture;
 
-        [Tooltip("The rotation speed of the starfield, relative to the day/night cycle.")]
+        [Tooltip("Milky Way / Galactic Dust only. Additive blend.")]
+        public Texture milkyWayTexture;
+
+        [Header("Space Alignment & Intensity")]
+        [Tooltip("Static tilt of the celestial sphere (X=Tilt, Y=Initial, Z=Roll).")]
+        public Vector3 starfieldAlignment = Vector3.zero;
+
+        [Tooltip("Speed of rotation over time (Y-axis spin).")]
         [Range(-2f, 2f)]
         public float starsRotationSpeed = 0.5f;
+
+        [Range(0f, 5f)]
+        public float starsIntensity = 1.0f;
+
+        [Range(0f, 5f)]
+        public float milkyWayIntensity = 1.0f;
 
         [Header("Stars Twinkle")]
         [Range(1f, 300f)] public float twinkleScale = 150f;

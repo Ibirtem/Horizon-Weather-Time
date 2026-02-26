@@ -90,7 +90,12 @@ namespace BlackHorizon.HorizonWeatherTime
         [SerializeField] private float[] _bake_exposure;
 
         [SerializeField] private Texture[] _bake_starsTex;
-        [SerializeField] private float[] _bake_starsRot;
+        [SerializeField] private Texture[] _bake_milkyWayTex;
+        [SerializeField] private Vector3[] _bake_starAlignment;
+        [SerializeField] private float[] _bake_starSpeed;
+        [SerializeField] private float[] _bake_starsIntensity;
+        [SerializeField] private float[] _bake_milkyWayIntensity;
+
         [SerializeField] private float[] _bake_twinkleScale;
         [SerializeField] private float[] _bake_twinkleSpeed;
         [SerializeField] private float[] _bake_twinkleStrength;
@@ -189,6 +194,7 @@ namespace BlackHorizon.HorizonWeatherTime
             int count = weatherProfilesList.Length;
             _bakedProfileCount = count;
 
+            // Arrays Init
             _bake_sunZenith = new Color[count];
             _bake_sunHorizon = new Color[count];
             _bake_sunIntensity = new float[count];
@@ -203,8 +209,14 @@ namespace BlackHorizon.HorizonWeatherTime
             _bake_mieG = new float[count];
             _bake_exposure = new float[count];
 
+            // --- STARS & DEEP SPACE ---
             _bake_starsTex = new Texture[count];
-            _bake_starsRot = new float[count];
+            _bake_milkyWayTex = new Texture[count];
+            _bake_starAlignment = new Vector3[count];
+            _bake_starSpeed = new float[count];
+            _bake_starsIntensity = new float[count];
+            _bake_milkyWayIntensity = new float[count];
+            
             _bake_twinkleScale = new float[count];
             _bake_twinkleSpeed = new float[count];
             _bake_twinkleStrength = new float[count];
@@ -254,7 +266,7 @@ namespace BlackHorizon.HorizonWeatherTime
                 _bake_dayAmbient[i] = light != null ? light.dayAmbientColor : new Color(0.4f, 0.5f, 0.6f);
                 _bake_nightAmbient[i] = light != null ? light.nightAmbientColor : new Color(0.05f, 0.05f, 0.1f);
 
-                // Sky
+                // Sky & Deep Space
                 var sky = p.skyProfile;
                 _bake_rayleigh[i] = sky != null ? sky.rayleigh : 1.0f;
                 _bake_turbidity[i] = sky != null ? sky.turbidity : 5.0f;
@@ -263,7 +275,12 @@ namespace BlackHorizon.HorizonWeatherTime
                 _bake_exposure[i] = sky != null ? sky.exposure : 0.3f;
 
                 _bake_starsTex[i] = sky != null ? sky.starsTexture : null;
-                _bake_starsRot[i] = sky != null ? sky.starsRotationSpeed : 0.5f;
+                _bake_milkyWayTex[i] = sky != null ? sky.milkyWayTexture : null;
+                _bake_starAlignment[i] = sky != null ? sky.starfieldAlignment : Vector3.zero;
+                _bake_starSpeed[i] = sky != null ? sky.starsRotationSpeed : 0.5f;
+                _bake_starsIntensity[i] = sky != null ? sky.starsIntensity : 1.0f;
+                _bake_milkyWayIntensity[i] = sky != null ? sky.milkyWayIntensity : 1.0f;
+
                 _bake_twinkleScale[i] = sky != null ? sky.twinkleScale : 150f;
                 _bake_twinkleSpeed[i] = sky != null ? sky.twinkleSpeed : 0.7f;
                 _bake_twinkleStrength[i] = sky != null ? sky.twinkleStrength : 0.8f;
@@ -284,6 +301,7 @@ namespace BlackHorizon.HorizonWeatherTime
                 _bake_cloudTex[i] = clouds != null ? clouds.cloudNoiseTexture : null;
                 _bake_weatherMapTex[i] = clouds != null ? clouds.weatherMapTexture : null;
                 _bake_blueNoiseTex[i] = clouds != null ? clouds.blueNoiseTexture : null;
+                
                 _bake_cloudAltitude[i] = clouds != null ? clouds.altitude : 4.0f;
                 _bake_cloudScale[i] = clouds != null ? clouds.scale : 3.5f;
                 _bake_cloudCoverage[i] = (clouds != null && clouds.enabled) ? clouds.coverage : 0.0f;
@@ -689,19 +707,25 @@ namespace BlackHorizon.HorizonWeatherTime
                     _bake_mieCoeff[_skyIndex], _bake_mieG[_skyIndex], _bake_exposure[_skyIndex]
                 );
 
-                // Stars
-                Texture safeStarsTex = (_bake_starsTex != null && _skyIndex < _bake_starsTex.Length) ? _bake_starsTex[_skyIndex] : null;
+                // Stars & Deep Space
+                Texture safeStars = (_bake_starsTex != null && _skyIndex < _bake_starsTex.Length) ? _bake_starsTex[_skyIndex] : null;
+                Texture safeMW = (_bake_milkyWayTex != null && _skyIndex < _bake_milkyWayTex.Length) ? _bake_milkyWayTex[_skyIndex] : null;
 
                 _skyManager.UpdateStars(_sunTimeOfDay, sun.transform.forward,
-                    safeStarsTex, _bake_starsRot[_skyIndex], _bake_twinkleScale[_skyIndex],
-                    _bake_twinkleSpeed[_skyIndex], _bake_twinkleStrength[_skyIndex]
+                    safeStars, safeMW,
+                    _bake_starAlignment[_skyIndex],
+                    _bake_starSpeed[_skyIndex],
+                    _bake_starsIntensity[_skyIndex],
+                    _bake_milkyWayIntensity[_skyIndex],
+                    _bake_twinkleScale[_skyIndex],
+                    _bake_twinkleSpeed[_skyIndex],
+                    _bake_twinkleStrength[_skyIndex]
                 );
 
                 // Clouds
                 if (_bake_cloudAltitude != null && _cloudIndex < _bake_cloudAltitude.Length)
                 {
                     Texture safeCloudTex = (_bake_cloudTex != null && _cloudIndex < _bake_cloudTex.Length) ? _bake_cloudTex[_cloudIndex] : null;
-
                     Texture safeWeatherMap = (_bake_weatherMapTex != null && _cloudIndex < _bake_weatherMapTex.Length) ? _bake_weatherMapTex[_cloudIndex] : null;
                     Texture safeBlueNoise = (_bake_blueNoiseTex != null && _cloudIndex < _bake_blueNoiseTex.Length) ? _bake_blueNoiseTex[_cloudIndex] : null;
 
