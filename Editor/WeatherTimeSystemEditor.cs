@@ -790,5 +790,22 @@ namespace BlackHorizon.HorizonWeatherTime
             }
             catch { /* Ignoring auto-linking errors */ }
         }
+
+        // ================================================================
+        // SCENE CREATION
+        // ================================================================
+        [MenuItem("GameObject/Horizon/Weather Time System", false, 10)]
+        private static void CreateWeatherTimeSystem(MenuCommand menuCommand)
+        {
+            GameObject go = new GameObject("Horizon Weather & Time");
+
+            go.AddComponent<WeatherTimeSystem>();
+
+            GameObjectUtility.SetParentAndAlign(go, menuCommand.context as GameObject);
+
+            Undo.RegisterCreatedObjectUndo(go, "Create Horizon Weather Time System");
+
+            Selection.activeObject = go;
+        }
     }
 }

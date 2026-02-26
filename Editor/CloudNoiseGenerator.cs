@@ -11,7 +11,7 @@ namespace BlackHorizon.HorizonWeatherTime
 
         public const string DEFAULT_NOISE_PATH = "Assets/Horizon Weather & Time/Textures/Horizon_CloudNoise_Gen.png";
 
-        [MenuItem("Horizon/Tools/Generate Cloud Noise")]
+        [MenuItem("Tools/Horizon/WeatherTime/Generate Cloud Noise")]
         public static void ShowWindow()
         {
             GetWindow<CloudNoiseGenerator>("Cloud Noise Gen");

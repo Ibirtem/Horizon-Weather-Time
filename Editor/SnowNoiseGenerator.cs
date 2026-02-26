@@ -12,7 +12,7 @@ namespace BlackHorizon.HorizonWeatherTime
 
         public const string DEFAULT_SNOW_NOISE_PATH = "Assets/Horizon Weather & Time/Textures/Horizon_SnowNoise_Gen.png";
 
-        [MenuItem("Horizon/Tools/Generate Snow Noise")]
+        [MenuItem("Tools/Horizon/WeatherTime/Generate Snow Noise")]
         public static void ShowWindow()
         {
             GetWindow<SnowNoiseGenerator>("Snow Noise Gen");
