@@ -58,6 +58,8 @@ namespace BlackHorizon.HorizonWeatherTime
         private int CloudTexID, CloudScaleID, CloudCoverageID, CloudWindID, CloudColorID, CloudShadowColorID;
         private int CloudAltitudeID, CloudDensityID, CloudDetailID, CloudWispID, CloudScatterID;
 
+        private int WeatherMapTexID, BlueNoiseTexID;
+
         // Fog
         private int FogColorID;
         private int FogBlendID;
@@ -100,6 +102,9 @@ namespace BlackHorizon.HorizonWeatherTime
             CloudDetailID = VRCShader.PropertyToID("_CloudDetail");
             CloudWispID = VRCShader.PropertyToID("_CloudWisp");
             CloudScatterID = VRCShader.PropertyToID("_CloudScatter");
+
+            WeatherMapTexID = VRCShader.PropertyToID("_WeatherMapTex");
+            BlueNoiseTexID = VRCShader.PropertyToID("_BlueNoiseTex");
 
             FogColorID = VRCShader.PropertyToID("_HorizonFogColor");
             FogBlendID = VRCShader.PropertyToID("_HorizonFogBlend");
@@ -238,15 +243,19 @@ namespace BlackHorizon.HorizonWeatherTime
             _skyboxInstance.SetFloat(TwinkleStrengthID, twinkleStrength);
         }
 
-        public void UpdateClouds(Texture cloudTex, float altitude, float scale, float coverage, float density, float detail, float wisp, Vector2 windSpeed, Color baseColor, Color shadowColor, float scatter)
+        public void UpdateClouds(Texture cloudTex, Texture weatherMapTex, Texture blueNoiseTex, float altitude, float scale, float coverage, float density, float detail, float wisp, Vector2 windSpeed, Color baseColor, Color shadowColor, float scatter)
         {
             EnsureInitialized();
             if (_skyboxInstance == null) return;
+
             if (_currentCloudTexture != cloudTex)
             {
                 _skyboxInstance.SetTexture(CloudTexID, cloudTex);
                 _currentCloudTexture = cloudTex;
             }
+
+            if (weatherMapTex != null) _skyboxInstance.SetTexture(WeatherMapTexID, weatherMapTex);
+            if (blueNoiseTex != null) _skyboxInstance.SetTexture(BlueNoiseTexID, blueNoiseTex);
 
 #if !COMPILER_UDONSHARP && UNITY_EDITOR
             if (Application.isPlaying) { _currentCloudOffset += windSpeed * Time.deltaTime; }

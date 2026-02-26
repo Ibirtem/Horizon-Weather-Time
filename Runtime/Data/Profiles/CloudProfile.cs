@@ -5,6 +5,13 @@ namespace BlackHorizon.HorizonWeatherTime
     [CreateAssetMenu(fileName = "New Cloud Profile", menuName = "Horizon/Profiles/Cloud Profile")]
     public class CloudProfile : ScriptableObject
     {
+        [Header("Macro Structure & Optimization")]
+        [Tooltip("2D Weather Map. R = Coverage, G = Cloud Type/Height.")]
+        public Texture2D weatherMapTexture;
+
+        [Tooltip("Blue Noise texture for Raymarching dithering. Reduces stepping artifacts.")]
+        public Texture2D blueNoiseTexture;
+
         [Header("Shape & Coverage")]
         public bool enabled = true;
         public Texture2D cloudNoiseTexture;

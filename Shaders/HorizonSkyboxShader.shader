@@ -21,6 +21,8 @@ Shader "Horizon/Procedural Skybox"
         [HideInInspector] _MoonPosition ("Moon Position", Vector) = (0.0, -0.5, 0.0, 0.0)
 
         [Header(Volumetric Clouds)]
+        [NoScaleOffset] _WeatherMapTex ("Weather Map (RG)", 2D) = "black" {}
+        [NoScaleOffset] _BlueNoiseTex ("Blue Noise (Dither)", 2D) = "gray" {}
         [NoScaleOffset] _CloudTex ("Cloud Noise (RGBA)", 2D) = "black" {}
         _CloudColor ("Cloud Lit Color", Color) = (0.9,0.9,0.9,1)
         _CloudShadowColor ("Cloud Shadow Color", Color) = (0.3,0.3,0.35,1)
@@ -76,6 +78,8 @@ Shader "Horizon/Procedural Skybox"
             float3 _MoonPosition;
 
             // Clouds
+            sampler2D _WeatherMapTex;
+            sampler2D _BlueNoiseTex;
             sampler2D _CloudTex;
             float4 _CloudColor, _CloudShadowColor;
             float _CloudAltitude, _CloudScale, _CloudCoverage, _CloudDensity;
@@ -165,31 +169,56 @@ Shader "Horizon/Procedural Skybox"
             }
 
             float SampleCloudDensity(float3 p, float heightFraction) {
+                // --- 1. Weather Map Sampling (RGBA) ---
+                float2 weatherUV = p.xz * 0.000005 * _CloudScale + (_CloudWind * 0.1);
+                float4 weather = tex2Dlod(_WeatherMapTex, float4(weatherUV, 0, 0));
+
+                float weatherCoverage = weather.r; // Coverage
+                float cloudType       = weather.g; // 0=Stratus, 1=Cumulonimbus
+                float erosionMask     = weather.b; // Detail intensity
+                float densityMod      = weather.a; // Local density variation
+
+                // Dynamic Coverage Thresholding
+                float weatherThreshold = 1.0 - _CloudCoverage;
+                float macroCoverage = smoothstep(weatherThreshold - 0.15, weatherThreshold + 0.15, weatherCoverage);
+
+                if (macroCoverage < 0.01) return 0.0;
+
+                // --- 2. Vertical Profile based on Cloud Type ---
+                float h = heightFraction;
+                
+                // Type 0: Stratus (Low, flat, sheet-like)
+                float stratusProfile = smoothstep(0.0, 0.1, h) * smoothstep(0.4, 0.2, h);
+                
+                // Type 0.5: Cumulus (Round, puffy, mid-height)
+                float cumulusProfile = saturate(4.0 * h * (1.0 - h));
+                
+                // Type 1.0: Cumulonimbus (Tall, anvil-like)
+                float cbProfile = smoothstep(0.0, 0.1, h) * smoothstep(1.0, 0.6, h);
+
+                float t = cloudType * 2.0;
+                float verticalProfile = (t < 1.0) 
+                    ? lerp(stratusProfile, cumulusProfile, t) 
+                    : lerp(cumulusProfile, cbProfile, t - 1.0);
+
+                // --- 3. Base Shape ---
                 float2 baseUV = p.xz * 0.00002 * _CloudScale + _CloudWind;
-                
-                float2 wobble = float2(cos(heightFraction * 3.0), sin(heightFraction * 3.0)) * 0.02;
-                
+                float2 wobble = float2(cos(h * 4.0), sin(h * 4.0)) * 0.015;
                 float baseShape = tex2Dlod(_CloudTex, float4(baseUV + wobble, 0, 0)).r;
-                
-                float2 erosionUV = baseUV + (float2(heightFraction, heightFraction * 0.9) * 0.2); 
+
+                // --- 4. Detailed Erosion ---
+                float2 erosionUV = baseUV + float2(h, h * 0.8) * 0.3;
                 float4 erosionData = tex2Dlod(_CloudTex, float4(erosionUV, 0, 0));
-                
-                float erosion = erosionData.g;
-                float detail = erosionData.b;
 
-                float verticalProfile = saturate(4.0 * heightFraction * (1.0 - heightFraction));
+                float erosionAmount = _CloudDetail * erosionMask; 
+                baseShape -= erosionData.g * erosionAmount * lerp(0.5, 1.0, h);
+                baseShape -= erosionData.b * _CloudWisp * 0.5;
+                baseShape *= smoothstep(0.0, 0.15, h);
 
-                baseShape -= erosion * _CloudDetail * lerp(0.5, 1.0, heightFraction);
-                baseShape -= detail * _CloudWisp * 0.5;
+                // --- 5. Final Density Calculation ---
+                float density = smoothstep(1.0 - macroCoverage, 1.01, baseShape);
 
-                float bottomFade = smoothstep(0.0, 0.15, heightFraction);
-                baseShape *= bottomFade;
-
-                float threshold = 1.0 - _CloudCoverage;
-                
-                float density = smoothstep(threshold - 0.2, threshold + 0.2, baseShape);
-                
-                return saturate(density * verticalProfile * _CloudDensity);
+                return saturate(density * verticalProfile * _CloudDensity * densityMod);
             }
 
             struct appdata { float4 vertex : POSITION; };
@@ -317,7 +346,9 @@ Shader "Horizon/Procedural Skybox"
                             float stepSize = rayLength / float(STEPS);
                             float3 startPos = direction * distToStart; 
 
-                            float dither = rand(i.vertex.xy * _Time.y);
+                            float2 ditherUV = (i.vertex.xy % 64.0) / 64.0;
+                            float dither = tex2Dlod(_BlueNoiseTex, float4(ditherUV, 0, 0)).r;
+                            
                             startPos += direction * stepSize * dither;
                             
                             // --- LIGHTING ---
