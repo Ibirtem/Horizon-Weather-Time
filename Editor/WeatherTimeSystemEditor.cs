@@ -571,32 +571,38 @@ namespace BlackHorizon.HorizonWeatherTime
 
         private void CheckAndConfigureParticleAssets()
         {
-            string texPath = "Assets/Horizon Weather & Time/Textures/DefaultSnowflake.png";
+            Texture2D snowTex = EnsureSnowflakeTexture();
+            Mesh particleMesh = EnsureParticleMesh();
+            Material particleMat = EnsureParticleMaterial(snowTex);
+
+            if (_weatherEffectsManagerProp.objectReferenceValue != null)
+            {
+                var manager = (WeatherEffectsManager)_weatherEffectsManagerProp.objectReferenceValue;
+                ConfigureEffectsManagerInstance(manager, particleMesh, particleMat);
+            }
+
+            UpdateSnowPrefab(particleMesh, particleMat);
+        }
+
+        // --- SUB-FUNCTIONS ---
+
+        private Texture2D EnsureSnowflakeTexture()
+        {
+            string texPath = "Assets/Horizon Weather & Time/Textures/Horizon_SnowFlake_v1.png";
+            string legacyPath = "Assets/Horizon Weather & Time/Textures/DefaultSnowflake.png";
+
             Texture2D tex = AssetDatabase.LoadAssetAtPath<Texture2D>(texPath);
 
             if (tex == null)
             {
+                if (AssetDatabase.LoadAssetAtPath<Texture2D>(legacyPath) != null)
+                    AssetDatabase.DeleteAsset(legacyPath);
+
                 if (!Directory.Exists("Assets/Horizon Weather & Time/Textures"))
                     Directory.CreateDirectory("Assets/Horizon Weather & Time/Textures");
 
-                int res = 64;
-                tex = new Texture2D(res, res, TextureFormat.ARGB32, false);
-                Color[] pixels = new Color[res * res];
-                float center = res * 0.5f;
-                float maxRadius = res * 0.45f;
+                tex = GenerateRealisticSnowFlake(128);
 
-                for (int y = 0; y < res; y++)
-                {
-                    for (int x = 0; x < res; x++)
-                    {
-                        float dist = Vector2.Distance(new Vector2(x, y), new Vector2(center, center));
-                        float alpha = 0f;
-                        if (dist < maxRadius) { alpha = 1.0f - (dist / maxRadius); alpha = Mathf.Pow(alpha, 2.0f); }
-                        pixels[y * res + x] = new Color(1f, 1f, 1f, alpha);
-                    }
-                }
-                tex.SetPixels(pixels);
-                tex.Apply();
                 File.WriteAllBytes(texPath, tex.EncodeToPNG());
                 AssetDatabase.Refresh();
 
@@ -606,88 +612,109 @@ namespace BlackHorizon.HorizonWeatherTime
                     importer.alphaIsTransparency = true;
                     importer.alphaSource = TextureImporterAlphaSource.FromInput;
                     importer.wrapMode = TextureWrapMode.Clamp;
+                    importer.filterMode = FilterMode.Bilinear;
+                    importer.textureCompression = TextureImporterCompression.Uncompressed;
                     importer.SaveAndReimport();
                 }
+
                 tex = AssetDatabase.LoadAssetAtPath<Texture2D>(texPath);
             }
+            return tex;
+        }
 
+        private Mesh EnsureParticleMesh()
+        {
             string meshPath = "Assets/Horizon Weather & Time/Resources/Meshes/GPUParticleVolume.asset";
-            Mesh gpuParticleMesh = AssetDatabase.LoadAssetAtPath<Mesh>(meshPath);
-            if (gpuParticleMesh == null)
+            Mesh mesh = AssetDatabase.LoadAssetAtPath<Mesh>(meshPath);
+            if (mesh == null)
             {
-                gpuParticleMesh = GenerateGPUParticleMesh(15000, meshPath);
+                mesh = GenerateGPUParticleMesh(15000, meshPath);
+            }
+            return mesh;
+        }
+
+        private Material EnsureParticleMaterial(Texture2D texture)
+        {
+            string matPath = "Assets/Horizon Weather & Time/Materials/SnowParticle_Lit_Material.mat";
+            Material mat = AssetDatabase.LoadAssetAtPath<Material>(matPath);
+            Shader shader = Shader.Find("Horizon/GPU Particles");
+
+            if (shader == null)
+            {
+                Debug.LogError("[WeatherTimeSystem] Shader 'Horizon/GPU Particles' missing!");
+                return mat;
             }
 
-            Material mat = AssetDatabase.LoadAssetAtPath<Material>("Assets/Horizon Weather & Time/Materials/SnowParticle_Lit_Material.mat");
             if (mat == null)
             {
-                Shader gpuParticleShader = Shader.Find("Horizon/GPU Particles");
-                if (gpuParticleShader == null)
-                {
-                    Debug.LogError("[WeatherTimeSystem] Shader 'Horizon/GPU Particles' not found! Cannot create material.");
-                    return;
-                }
+                mat = new Material(shader);
+                mat.SetTexture("_MainTex", texture);
 
-                mat = new Material(gpuParticleShader);
-                mat.SetTexture("_MainTex", tex);
-                AssetDatabase.CreateAsset(mat, "Assets/Horizon Weather & Time/Materials/SnowParticle_Lit_Material.mat");
+                string dir = Path.GetDirectoryName(matPath);
+                if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+
+                AssetDatabase.CreateAsset(mat, matPath);
             }
-            else if (mat.shader == null || mat.shader.name != "Horizon/GPU Particles")
+            else
             {
-                Shader gpuParticleShader = Shader.Find("Horizon/GPU Particles");
-                if (gpuParticleShader != null)
+                if (mat.shader != shader) mat.shader = shader;
+                if (mat.GetTexture("_MainTex") != texture)
                 {
-                    mat.shader = gpuParticleShader;
-                    mat.SetTexture("_MainTex", tex);
+                    mat.SetTexture("_MainTex", texture);
                     EditorUtility.SetDirty(mat);
                 }
-                else
-                {
-                    Debug.LogError("[WeatherTimeSystem] Shader 'Horizon/GPU Particles' not found! Cannot assign shader.");
-                }
             }
+            return mat;
+        }
 
-            if (_weatherEffectsManagerProp.objectReferenceValue != null)
+        private void ConfigureEffectsManagerInstance(WeatherEffectsManager manager, Mesh mesh, Material mat)
+        {
+            Transform root = manager.transform;
+            Transform volumeTrans = root.Find("WeatherFX_Volume");
+
+            if (volumeTrans == null)
             {
-                var effectsManager = (WeatherEffectsManager)_weatherEffectsManagerProp.objectReferenceValue;
-                Transform root = effectsManager.transform;
-
-                Transform volumeTrans = root.Find("WeatherFX_Volume");
-                if (volumeTrans == null)
-                {
-                    GameObject volObj = new GameObject("WeatherFX_Volume");
-                    volObj.transform.SetParent(root);
-                    volObj.transform.localPosition = Vector3.zero;
-                    volumeTrans = volObj.transform;
-                }
-
-                MeshFilter mf = volumeTrans.GetComponent<MeshFilter>();
-                if (mf == null) mf = volumeTrans.gameObject.AddComponent<MeshFilter>();
-                mf.sharedMesh = gpuParticleMesh;
-
-                MeshRenderer mr = volumeTrans.GetComponent<MeshRenderer>();
-                if (mr == null) mr = volumeTrans.gameObject.AddComponent<MeshRenderer>();
-                mr.sharedMaterial = mat;
-                mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-                mr.receiveShadows = false;
-                mr.lightProbeUsage = UnityEngine.Rendering.LightProbeUsage.Off;
-
-                volumeTrans.gameObject.layer = 2;
-
-                effectsManager.particleRenderer = mr;
-                EditorUtility.SetDirty(effectsManager);
+                GameObject volObj = new GameObject("WeatherFX_Volume");
+                volObj.transform.SetParent(root);
+                volObj.transform.localPosition = Vector3.zero;
+                volumeTrans = volObj.transform;
             }
 
+            if (volumeTrans.gameObject.layer != 2) volumeTrans.gameObject.layer = 2;
+
+            MeshFilter mf = volumeTrans.GetComponent<MeshFilter>();
+            if (mf == null) mf = volumeTrans.gameObject.AddComponent<MeshFilter>();
+            if (mf.sharedMesh != mesh) mf.sharedMesh = mesh;
+
+            MeshRenderer mr = volumeTrans.GetComponent<MeshRenderer>();
+            if (mr == null) mr = volumeTrans.gameObject.AddComponent<MeshRenderer>();
+
+            if (mr.sharedMaterial != mat) mr.sharedMaterial = mat;
+
+            mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            mr.receiveShadows = false;
+            mr.lightProbeUsage = UnityEngine.Rendering.LightProbeUsage.Off;
+
+            if (manager.particleRenderer != mr)
+            {
+                manager.particleRenderer = mr;
+                EditorUtility.SetDirty(manager);
+            }
+        }
+
+        private void UpdateSnowPrefab(Mesh mesh, Material mat)
+        {
             var prefab = Resources.Load<GameObject>("Prefabs/SnowEffect");
             if (prefab != null)
             {
                 bool changed = false;
+
                 var oldPs = prefab.GetComponentInChildren<ParticleSystem>();
                 if (oldPs != null) { DestroyImmediate(oldPs.gameObject, true); changed = true; }
 
                 var mf = prefab.GetComponent<MeshFilter>();
                 if (mf == null) { mf = prefab.AddComponent<MeshFilter>(); changed = true; }
-                if (mf.sharedMesh != gpuParticleMesh) { mf.sharedMesh = gpuParticleMesh; changed = true; }
+                if (mf.sharedMesh != mesh) { mf.sharedMesh = mesh; changed = true; }
 
                 var mr = prefab.GetComponent<MeshRenderer>();
                 if (mr == null) { mr = prefab.AddComponent<MeshRenderer>(); changed = true; }
@@ -699,6 +726,59 @@ namespace BlackHorizon.HorizonWeatherTime
 
                 if (changed) EditorUtility.SetDirty(prefab);
             }
+        }
+
+        /// <summary>
+        /// Generates a realistic "clump" snowflake using layered noise for a soft, fluffy look.
+        /// </summary>
+        private static Texture2D GenerateRealisticSnowFlake(int resolution)
+        {
+            Texture2D tex = new Texture2D(resolution, resolution, TextureFormat.ARGB32, false);
+            Color[] pixels = new Color[resolution * resolution];
+            float invRes = 1.0f / (resolution - 1);
+
+            float seedX = UnityEngine.Random.Range(0f, 100f);
+            float seedY = UnityEngine.Random.Range(0f, 100f);
+
+            for (int y = 0; y < resolution; y++)
+            {
+                for (int x = 0; x < resolution; x++)
+                {
+                    float u = (x * invRes) * 2.0f - 1.0f;
+                    float v = (y * invRes) * 2.0f - 1.0f;
+
+                    float dist = Mathf.Sqrt(u * u + v * v);
+
+                    float t = Mathf.InverseLerp(0.1f, 0.5f, dist);
+                    float falloff = Mathf.SmoothStep(0f, 1f, t);
+
+                    float circleMask = 1.0f - falloff;
+
+                    if (circleMask <= 0.001f)
+                    {
+                        pixels[y * resolution + x] = Color.clear;
+                        continue;
+                    }
+
+                    float n1 = Mathf.PerlinNoise(u * 2.5f + seedX, v * 2.5f + seedY);
+                    float n2 = Mathf.PerlinNoise(u * 6.0f - seedX, v * 6.0f - seedY);
+                    float n3 = Mathf.PerlinNoise(u * 12.0f + seedY, v * 12.0f + seedX);
+
+                    float noise = n1 * 0.5f + n2 * 0.3f + n3 * 0.2f;
+                    float alpha = circleMask * noise;
+
+                    alpha = Mathf.Pow(alpha, 1.5f);
+                    alpha *= 1.8f;
+
+                    alpha = Mathf.Clamp01(alpha);
+
+                    pixels[y * resolution + x] = new Color(1f, 1f, 1f, alpha);
+                }
+            }
+
+            tex.SetPixels(pixels);
+            tex.Apply();
+            return tex;
         }
 
         private Mesh GenerateGPUParticleMesh(int count, string path)
