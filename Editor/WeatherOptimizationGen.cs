@@ -6,15 +6,13 @@ namespace BlackHorizon.HorizonWeatherTime
 {
     /// <summary>
     /// Generates Advanced Weather Maps & Blue Noise textures for volumetric cloud rendering.
-    /// Implements industry-standard techniques (Perlin-Worley, Domain Warping) inspired by 
-    /// Guerrilla Games' "Horizon Zero Dawn" cloud rendering approach.
     /// </summary>
     public class WeatherOptimizationGen : EditorWindow
     {
         public const string DEFAULT_WEATHER_MAP_PATH = "Assets/Horizon Weather & Time/Textures/Horizon_WeatherMap_Gen.png";
         public const string DEFAULT_BLUE_NOISE_PATH = "Assets/Horizon Weather & Time/Textures/Horizon_BlueNoise_Gen.png";
 
-        [MenuItem("Tools/Horizon/WeatherTime/Generate Optimization Maps (AAA)")]
+        [MenuItem("Tools/Horizon/WeatherTime/Generate Optimization Maps")]
         public static void ShowWindow()
         {
             GetWindow<WeatherOptimizationGen>("Optimization Gen");
@@ -22,7 +20,7 @@ namespace BlackHorizon.HorizonWeatherTime
 
         private void OnGUI()
         {
-            GUILayout.Label("AAA Cloud Maps Generator", EditorStyles.boldLabel);
+            GUILayout.Label("Cloud Maps Generator", EditorStyles.boldLabel);
             EditorGUILayout.Space();
             EditorGUILayout.HelpBox("Generates a channel-packed Texture for Volumetric Control.\n\n" +
                                     "R: Coverage (Perlin-Worley + Domain Warp)\n" +

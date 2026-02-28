@@ -15,25 +15,93 @@ namespace BlackHorizon.HorizonWeatherTime
     public class WeatherEffectsManager : MonoBehaviour
 #endif
     {
-        private GameObject _currentEffectInstance;
-        private Camera _mainCamera;
+        [Header("Static Scene References (Auto-Assigned)")]
+        [Tooltip("The MeshRenderer that plays the weather effect (Snow/Rain).")]
+        public MeshRenderer particleRenderer;
+
+        [Tooltip("The Top-Down Orthographic Camera for roof occlusion.")]
+        public Camera occlusionCamera;
+
+        [Tooltip("The depth-only replacement shader for occlusion camera.")]
+        public Shader depthReplacementShader;
+
         private MaterialPropertyBlock _sharedPropertyBlock;
         private int SystemLightingColorID;
 
+        // Shader Property IDs
+        private int BoundsID, ParticleSizeID, DensityID;
+        private int OccTexID, OccCamPosID, OccOrthoSizeID, OccFarClipID;
+
+        private Mesh _instanceMesh;
+
         private void Start()
         {
-#if UDONSHARP
-        SystemLightingColorID = VRCShader.PropertyToID("_SystemLightingColor");
-#else
-            SystemLightingColorID = Shader.PropertyToID("_SystemLightingColor");
-#endif
-
-            if (_sharedPropertyBlock == null) _sharedPropertyBlock = new MaterialPropertyBlock();
+            SetupShaderIDs();
+            SetupCameraShader();
         }
 
         private void Awake()
         {
             _sharedPropertyBlock = new MaterialPropertyBlock();
+            SetupShaderIDs();
+        }
+
+        private void OnEnable()
+        {
+            SetupCameraShader();
+        }
+
+        private void OnDisable()
+        {
+            if (_instanceMesh != null)
+            {
+#if !COMPILER_UDONSHARP && UNITY_EDITOR
+                DestroyImmediate(_instanceMesh);
+#else
+                Destroy(_instanceMesh);
+#endif
+                _instanceMesh = null;
+            }
+        }
+
+        private void SetupShaderIDs()
+        {
+#if UDONSHARP
+            SystemLightingColorID = VRCShader.PropertyToID("_SystemLightingColor");
+            BoundsID = VRCShader.PropertyToID("_HorizonBounds");
+            ParticleSizeID = VRCShader.PropertyToID("_HorizonParticleSize");
+            DensityID = VRCShader.PropertyToID("_HorizonDensity");
+            OccTexID = VRCShader.PropertyToID("_WeatherOcclusionTex");
+            OccCamPosID = VRCShader.PropertyToID("_OcclusionCamPos");
+            OccOrthoSizeID = VRCShader.PropertyToID("_OcclusionOrthoSize");
+            OccFarClipID = VRCShader.PropertyToID("_OcclusionFarClip");
+#else
+            SystemLightingColorID = Shader.PropertyToID("_SystemLightingColor");
+            BoundsID = Shader.PropertyToID("_HorizonBounds");
+            ParticleSizeID = Shader.PropertyToID("_HorizonParticleSize");
+            DensityID = Shader.PropertyToID("_HorizonDensity");
+            OccTexID = Shader.PropertyToID("_WeatherOcclusionTex");
+            OccCamPosID = Shader.PropertyToID("_OcclusionCamPos");
+            OccOrthoSizeID = Shader.PropertyToID("_OcclusionOrthoSize");
+            OccFarClipID = Shader.PropertyToID("_OcclusionFarClip");
+#endif
+        }
+
+        private void SetupCameraShader()
+        {
+            if (occlusionCamera == null) return;
+
+            if (depthReplacementShader != null)
+            {
+                occlusionCamera.backgroundColor = Color.white;
+                occlusionCamera.clearFlags = CameraClearFlags.SolidColor;
+
+                occlusionCamera.SetReplacementShader(depthReplacementShader, "RenderType");
+            }
+            else
+            {
+                Debug.LogWarning("[WeatherEffectsManager] Depth Replacement Shader is missing! Occlusion won't work.");
+            }
         }
 
         private void LateUpdate()
@@ -41,9 +109,9 @@ namespace BlackHorizon.HorizonWeatherTime
 #if !COMPILER_UDONSHARP && UNITY_EDITOR
             if (!Application.isPlaying)
             {
-                if (_mainCamera == null) _mainCamera = Camera.main; 
+                Camera cam = Camera.main; 
                 var sceneCam = UnityEditor.SceneView.lastActiveSceneView?.camera;
-                Vector3 target = sceneCam != null ? sceneCam.transform.position : (_mainCamera != null ? _mainCamera.transform.position : Vector3.zero);
+                Vector3 target = sceneCam != null ? sceneCam.transform.position : (cam != null ? cam.transform.position : Vector3.zero);
                 UpdatePosition(target);
             }
 #endif
@@ -53,102 +121,105 @@ namespace BlackHorizon.HorizonWeatherTime
 
         public void SetHeightOffset(float offset) { _currentHeightOffset = offset; }
 
+        private int _frameCounter = 0;
         public void UpdatePosition(Vector3 targetPos)
         {
-            if (_currentEffectInstance != null)
+            if (occlusionCamera != null)
             {
-                _currentEffectInstance.transform.position = targetPos + Vector3.up * _currentHeightOffset;
-                _currentEffectInstance.transform.rotation = Quaternion.identity;
+                occlusionCamera.transform.position = new Vector3(targetPos.x, targetPos.y + 60f, targetPos.z);
+                occlusionCamera.transform.rotation = Quaternion.Euler(90f, 0f, 0f);
+
+                if (_frameCounter % 100 == 0)
+                {
+                    SetupCameraShader();
+                }
+
+                _frameCounter++;
+
+                if (_frameCounter % 3 == 0)
+                {
+                    occlusionCamera.enabled = true;
+                }
+                else
+                {
+                    occlusionCamera.enabled = false;
+                }
             }
         }
 
-        public void UpdateWeatherEffects(GameObject effectPrefab, float heightOffset)
+        public void UpdateWeatherEffects(GameObject effectPrefabSource, float heightOffset)
         {
-            GameObject desiredPrefab = effectPrefab;
+            if (particleRenderer == null) return;
 
-            if (_currentEffectInstance != null)
+            if (effectPrefabSource == null)
             {
-                if (desiredPrefab != null && _currentEffectInstance.name.StartsWith(desiredPrefab.name))
-                {
-                    if (heightOffset > 0) _currentEffectInstance.transform.localPosition = Vector3.up * heightOffset;
-                    return;
-                }
+                particleRenderer.enabled = false;
+                return;
             }
 
-            CleanupAllChildEffects();
-
-            if (desiredPrefab != null)
+            Renderer sourceRenderer = effectPrefabSource.GetComponentInChildren<Renderer>();
+            if (sourceRenderer != null)
             {
-                var newInstance = Instantiate(desiredPrefab, Vector3.zero, Quaternion.identity, transform);
-                newInstance.name = $"{desiredPrefab.name} (Instance)";
-                _currentEffectInstance = newInstance;
+                particleRenderer.enabled = true;
+                particleRenderer.sharedMaterial = sourceRenderer.sharedMaterial;
 
-                if (heightOffset > 0)
+                MeshFilter sourceMf = effectPrefabSource.GetComponentInChildren<MeshFilter>();
+                MeshFilter targetMf = particleRenderer.GetComponent<MeshFilter>();
+
+                if (sourceMf != null && targetMf != null)
                 {
-                    newInstance.transform.localPosition = Vector3.up * heightOffset;
-                }
-
-                var mainParticleSystem = newInstance.GetComponentInChildren<ParticleSystem>();
-
 #if !COMPILER_UDONSHARP && UNITY_EDITOR
-                if (mainParticleSystem != null && mainParticleSystem.gameObject.name == "FallingSnow")
-                {
-                    var lppv = mainParticleSystem.GetComponent<LightProbeProxyVolume>();
-
-                    if (lppv == null)
+                    string targetInstanceName = sourceMf.sharedMesh.name + "_Instance";
+                    if (_instanceMesh == null || _instanceMesh.name != targetInstanceName) 
                     {
-                        mainParticleSystem.gameObject.AddComponent<LightProbeProxyVolume>();
+                        if (_instanceMesh != null) DestroyImmediate(_instanceMesh);
+                        
+                        _instanceMesh = Instantiate(sourceMf.sharedMesh);
+                        _instanceMesh.name = targetInstanceName;
+                        targetMf.mesh = _instanceMesh;
                     }
-                }
+#else
+                    targetMf.sharedMesh = sourceMf.sharedMesh;
 #endif
+                }
+
+                if (particleRenderer.gameObject.layer != 2) particleRenderer.gameObject.layer = 2;
             }
             else
             {
-                _currentEffectInstance = null;
+                particleRenderer.enabled = false;
             }
         }
 
-        public void UpdateEffectsLighting(Color globalLightColor)
+        public void UpdateEffectsLighting(Color globalLightColor, Vector3 bounds, float particleSize, float density)
         {
             if (_sharedPropertyBlock == null) _sharedPropertyBlock = new MaterialPropertyBlock();
-
-            if (_currentEffectInstance == null) return;
-
-            var renderers = _currentEffectInstance.GetComponentsInChildren<ParticleSystemRenderer>();
-
-            if (renderers.Length > 0)
-            {
-                _sharedPropertyBlock.SetColor(SystemLightingColorID, globalLightColor);
-
-                foreach (var psRenderer in renderers)
-                {
-                    psRenderer.SetPropertyBlock(_sharedPropertyBlock);
-                }
-            }
-        }
-
-        private void CleanupAllChildEffects()
-        {
-            for (int i = transform.childCount - 1; i >= 0; i--)
-            {
-                var child = transform.GetChild(i).gameObject;
-                CleanupEffect(child);
-            }
-        }
-
-        private void CleanupEffect(GameObject effectInstance)
-        {
-            if (effectInstance == null) return;
+            if (particleRenderer == null || !particleRenderer.enabled) return;
 
 #if !COMPILER_UDONSHARP && UNITY_EDITOR
-            if (!Application.isPlaying)
+            if (_instanceMesh != null)
             {
-                DestroyImmediate(effectInstance);
-                return;
+                _instanceMesh.bounds = new Bounds(Vector3.zero, bounds + Vector3.one * 5f);
             }
 #endif
-            Destroy(effectInstance);
-        }
 
+            _sharedPropertyBlock.SetColor(SystemLightingColorID, globalLightColor);
+            _sharedPropertyBlock.SetVector(BoundsID, bounds);
+            _sharedPropertyBlock.SetFloat(ParticleSizeID, particleSize);
+            _sharedPropertyBlock.SetFloat(DensityID, density);
+
+            if (occlusionCamera != null && occlusionCamera.targetTexture != null)
+            {
+                float requiredSize = Mathf.Max(bounds.x, bounds.z) * 0.6f;
+                occlusionCamera.orthographicSize = requiredSize;
+
+                _sharedPropertyBlock.SetTexture(OccTexID, occlusionCamera.targetTexture);
+                _sharedPropertyBlock.SetVector(OccCamPosID, occlusionCamera.transform.position);
+                _sharedPropertyBlock.SetFloat(OccOrthoSizeID, occlusionCamera.orthographicSize);
+                _sharedPropertyBlock.SetFloat(OccFarClipID, occlusionCamera.farClipPlane);
+            }
+
+            particleRenderer.SetPropertyBlock(_sharedPropertyBlock);
+        }
     }
 }

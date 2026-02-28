@@ -103,6 +103,10 @@ namespace BlackHorizon.HorizonWeatherTime
         [SerializeField] private GameObject[] _bake_effectPrefab;
         [SerializeField] private float[] _bake_effectHeight;
 
+        [SerializeField] private Vector3[] _bake_volumeBounds;
+        [SerializeField] private float[] _bake_particleSize;
+        [SerializeField] private float[] _bake_weatherDensity;
+
         [SerializeField] private Texture[] _bake_moonTex;
         [SerializeField] private float[] _bake_moonSize;
         [SerializeField] private Color[] _bake_moonTint;
@@ -224,6 +228,11 @@ namespace BlackHorizon.HorizonWeatherTime
             _bake_effectPrefab = new GameObject[count];
             _bake_effectHeight = new float[count];
 
+            _bake_volumeBounds = new Vector3[count];
+            _bake_particleSize = new float[count];
+            _bake_weatherDensity = new float[count];
+
+
             _bake_moonTex = new Texture[count];
             _bake_moonSize = new float[count];
             _bake_moonTint = new Color[count];
@@ -289,6 +298,10 @@ namespace BlackHorizon.HorizonWeatherTime
                 var fx = p.effectsProfile;
                 _bake_effectPrefab[i] = fx != null ? fx.weatherEffectPrefab : null;
                 _bake_effectHeight[i] = fx != null ? fx.spawnHeightOffset : 15f;
+
+                _bake_volumeBounds[i] = fx != null ? fx.volumeBounds : new Vector3(40, 40, 40);
+                _bake_particleSize[i] = fx != null ? fx.particleSize : 0.05f;
+                _bake_weatherDensity[i] = fx != null ? fx.weatherDensity : 1.0f;
 
                 // Moon
                 var moon = p.moonProfile;
@@ -771,7 +784,20 @@ namespace BlackHorizon.HorizonWeatherTime
             {
                 _weatherEffectsManager.SetHeightOffset(_bake_effectHeight[idx]);
                 _weatherEffectsManager.UpdateWeatherEffects(_bake_effectPrefab[idx], _bake_effectHeight[idx]);
-                _weatherEffectsManager.UpdateEffectsLighting(particleLightColor);
+
+                Vector3 volumeBounds = (_bake_volumeBounds != null && idx < _bake_volumeBounds.Length)
+                    ? _bake_volumeBounds[idx] : new Vector3(40, 40, 40);
+                float particleSize = (_bake_particleSize != null && idx < _bake_particleSize.Length)
+                    ? _bake_particleSize[idx] : 0.05f;
+                float weatherDensity = (_bake_weatherDensity != null && idx < _bake_weatherDensity.Length)
+                    ? _bake_weatherDensity[idx] : 1.0f;
+
+                _weatherEffectsManager.UpdateEffectsLighting(
+                    particleLightColor,
+                    volumeBounds,
+                    particleSize,
+                    weatherDensity
+                );
             }
         }
 

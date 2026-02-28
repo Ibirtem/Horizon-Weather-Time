@@ -104,19 +104,15 @@ namespace BlackHorizon.HorizonWeatherTime
 
         private static float TiledGradientNoise(float x, float y, float period)
         {
-            // Wrap coordinates based on period
             float xMod = x % period;
             float yMod = y % period;
 
-            // Grid cell coordinates
             int xi = Mathf.FloorToInt(xMod);
             int yi = Mathf.FloorToInt(yMod);
 
-            // Fractional part
             float xf = xMod - xi;
             float yf = yMod - yi;
 
-            // Fade curves (Smoothstep/Perlin fade: 6t^5 - 15t^4 + 10t^3)
             float u = xf * xf * xf * (xf * (xf * 6 - 15) + 10);
             float v = yf * yf * yf * (yf * (yf * 6 - 15) + 10);
 
@@ -133,7 +129,6 @@ namespace BlackHorizon.HorizonWeatherTime
 
         private static float Lerp(float a, float b, float t) { return a + t * (b - a); }
 
-        // Pseudo Random Hash
         private static int Hash(int x, int y)
         {
             int h = x * 374761393 + y * 668265263;
@@ -141,7 +136,6 @@ namespace BlackHorizon.HorizonWeatherTime
             return h ^ (h >> 16);
         }
 
-        // Gradient function
         private static float Grad(int hash, float x, float y)
         {
             int h = hash & 3;
