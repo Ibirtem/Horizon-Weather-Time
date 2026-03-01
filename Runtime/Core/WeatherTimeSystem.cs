@@ -80,8 +80,13 @@ namespace BlackHorizon.HorizonWeatherTime
         [SerializeField] private Color[] _bake_moonColor;
         [SerializeField] private float[] _bake_moonIntensity;
 
-        [SerializeField] private Color[] _bake_dayAmbient;
-        [SerializeField] private Color[] _bake_nightAmbient;
+        [SerializeField] private Color[] _bake_daySky;
+        [SerializeField] private Color[] _bake_dayEquator;
+        [SerializeField] private Color[] _bake_dayGround;
+
+        [SerializeField] private Color[] _bake_nightSky;
+        [SerializeField] private Color[] _bake_nightEquator;
+        [SerializeField] private Color[] _bake_nightGround;
 
         [SerializeField] private float[] _bake_rayleigh;
         [SerializeField] private float[] _bake_turbidity;
@@ -204,8 +209,13 @@ namespace BlackHorizon.HorizonWeatherTime
             _bake_sunIntensity = new float[count];
             _bake_moonColor = new Color[count];
             _bake_moonIntensity = new float[count];
-            _bake_dayAmbient = new Color[count];
-            _bake_nightAmbient = new Color[count];
+            
+            _bake_daySky = new Color[count];
+            _bake_dayEquator = new Color[count];
+            _bake_dayGround = new Color[count];
+            _bake_nightSky = new Color[count];
+            _bake_nightEquator = new Color[count];
+            _bake_nightGround = new Color[count];
 
             _bake_rayleigh = new float[count];
             _bake_turbidity = new float[count];
@@ -272,8 +282,14 @@ namespace BlackHorizon.HorizonWeatherTime
                 _bake_sunIntensity[i] = light != null ? light.sunIntensity : 1.0f;
                 _bake_moonColor[i] = light != null ? light.moonColor : new Color(0.8f, 0.9f, 1f);
                 _bake_moonIntensity[i] = light != null ? light.moonIntensity : 0.04f;
-                _bake_dayAmbient[i] = light != null ? light.dayAmbientColor : new Color(0.4f, 0.5f, 0.6f);
-                _bake_nightAmbient[i] = light != null ? light.nightAmbientColor : new Color(0.05f, 0.05f, 0.1f);
+                
+                _bake_daySky[i] = light != null ? light.daySkyColor : new Color(0.4f, 0.5f, 0.6f);
+                _bake_dayEquator[i] = light != null ? light.dayEquatorColor : new Color(0.3f, 0.35f, 0.4f);
+                _bake_dayGround[i] = light != null ? light.dayGroundColor : new Color(0.2f, 0.2f, 0.2f);
+                
+                _bake_nightSky[i] = light != null ? light.nightSkyColor : new Color(0.05f, 0.05f, 0.1f);
+                _bake_nightEquator[i] = light != null ? light.nightEquatorColor : new Color(0.02f, 0.02f, 0.05f);
+                _bake_nightGround[i] = light != null ? light.nightGroundColor : new Color(0.01f, 0.01f, 0.02f);
 
                 // Sky & Deep Space
                 var sky = p.skyProfile;
@@ -647,18 +663,21 @@ namespace BlackHorizon.HorizonWeatherTime
         {
             int idx = _lightingIndex;
 
+            if (_bake_daySky == null || idx >= _bake_daySky.Length) return Color.white;
+
             _lightingManager.UpdateLighting(
                 _sunTimeOfDay, _moonTimeOfDay,
                 _bake_sunHorizon[idx], _bake_sunZenith[idx], _bake_sunIntensity[idx],
                 _bake_moonColor[idx], _bake_moonIntensity[idx],
-                _bake_dayAmbient[idx], _bake_nightAmbient[idx]
+                _bake_daySky[idx], _bake_dayEquator[idx], _bake_dayGround[idx],
+                _bake_nightSky[idx], _bake_nightEquator[idx], _bake_nightGround[idx]
             );
 
             return _lightingManager.CalculateCurrentGlobalLight(
                 _sunTimeOfDay, _moonTimeOfDay,
                 _bake_sunHorizon[idx], _bake_sunZenith[idx], _bake_sunIntensity[idx],
                 _bake_moonColor[idx], _bake_moonIntensity[idx],
-                _bake_dayAmbient[idx], _bake_nightAmbient[idx]
+                _bake_daySky[idx], _bake_nightSky[idx]
             );
         }
 

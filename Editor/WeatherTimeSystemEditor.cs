@@ -318,6 +318,9 @@ namespace BlackHorizon.HorizonWeatherTime
                 (p) =>
                 {
                     p.lightingProfile.sunColorZenith = new Color(0.8f, 0.85f, 0.95f);
+                    p.lightingProfile.daySkyColor = new Color(0.5f, 0.6f, 0.7f);
+                    p.lightingProfile.dayEquatorColor = new Color(0.6f, 0.65f, 0.7f);
+                    p.lightingProfile.dayGroundColor = new Color(0.7f, 0.75f, 0.8f);
                     p.effectsProfile.weatherEffectPrefab = Resources.Load<GameObject>("Prefabs/SnowEffect");
                 }, "Overcast", "Overcast");
 
@@ -327,7 +330,9 @@ namespace BlackHorizon.HorizonWeatherTime
                 {
                     p.lightingProfile.sunIntensity = 0.5f;
                     p.lightingProfile.sunColorZenith = new Color(0.6f, 0.65f, 0.7f);
-                    p.lightingProfile.dayAmbientColor = new Color(0.3f, 0.35f, 0.4f);
+                    p.lightingProfile.daySkyColor = new Color(0.3f, 0.35f, 0.4f);
+                    p.lightingProfile.dayEquatorColor = new Color(0.25f, 0.3f, 0.35f);
+                    p.lightingProfile.dayGroundColor = new Color(0.15f, 0.2f, 0.25f);
                     p.cloudProfile.coverage = 0.85f;
                     p.cloudProfile.density = 2.0f;
                     p.cloudProfile.baseColor = new Color(0.3f, 0.3f, 0.35f);

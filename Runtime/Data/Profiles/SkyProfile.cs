@@ -8,7 +8,7 @@ namespace BlackHorizon.HorizonWeatherTime
         [Header("Atmosphere")]
         [Tooltip("Controls the overall turbidity (haziness) of the atmosphere.")]
         [Range(1f, 10f)]
-        public float turbidity = 5f;
+        public float turbidity = 2.5f;
 
         [Tooltip("Controls the Rayleigh scattering effect (blue sky).")]
         [Range(0f, 5f)]
@@ -20,11 +20,11 @@ namespace BlackHorizon.HorizonWeatherTime
 
         [Tooltip("Controls the directionality of Mie scattering.")]
         [Range(0f, 1f)]
-        public float mieDirectionalG = 0.8f;
+        public float mieDirectionalG = 0.76f;
 
-        [Tooltip("Overall brightness of the skybox. Higher values are brighter.")]
-        [Range(0f, 8f)]
-        public float exposure = 0.3f;
+        [Tooltip("Overall brightness of the skybox.")]
+        [Range(0f, 50f)]
+        public float exposure = 15f;
 
         [Header("Deep Space")]
         [Tooltip("Main Star Map (Stars only). Celestial/Equatorial Coordinates (EXR preferred).")]
@@ -42,17 +42,26 @@ namespace BlackHorizon.HorizonWeatherTime
         public float starsRotationSpeed = 0.5f;
 
         [Range(0f, 5f)]
-        public float starsIntensity = 1.0f;
+        public float starsIntensity = 0.02f;
 
         [Range(0f, 5f)]
-        public float milkyWayIntensity = 1.0f;
+        public float milkyWayIntensity = 0.002f;
 
         [Header("Stars Twinkle")]
-        [Range(1f, 300f)] public float twinkleScale = 150f;
-        [Range(1, 5)] public int twinkleDetail = 3;
-        [Range(0.1f, 20f)] public float twinkleSharpness = 5f;
-        [Range(0f, 2f)] public float twinkleSpeed = 0.7f;
-        [Range(0f, 2f)] public float twinkleStrength = 0.8f;
+        [Range(1f, 300f)]
+        public float twinkleScale = 150f;
+
+        [Range(1, 5)]
+        public int twinkleDetail = 3;
+
+        [Range(0.1f, 20f)]
+        public float twinkleSharpness = 5f;
+
+        [Range(0f, 0.05f)]
+        public float twinkleSpeed = 0.004f;
+
+        [Range(0f, 2f)]
+        public float twinkleStrength = 0.8f;
 
 #if UNITY_EDITOR
         private void OnValidate()

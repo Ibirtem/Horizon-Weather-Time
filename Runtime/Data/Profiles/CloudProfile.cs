@@ -18,19 +18,19 @@ namespace BlackHorizon.HorizonWeatherTime
 
         [Tooltip("How high the cloud layer appears. Affects perspective.")]
         [Range(1f, 10f)]
-        public float altitude = 4.0f;
+        public float altitude = 3.0f;
 
         [Tooltip("Overall scale of the cloud patterns. Higher = Smaller clouds.")]
         [Range(0.1f, 10f)]
-        public float scale = 3.5f;
+        public float scale = 3.0f;
 
         [Tooltip("How much of the sky is covered by clouds.")]
         [Range(0f, 1f)]
-        public float coverage = 0.5f;
+        public float coverage = 0.55f;
 
         [Tooltip("The density or 'thickness' of the clouds.")]
         [Range(0.1f, 5f)]
-        public float density = 1.0f;
+        public float density = 1.2f;
 
         [Header("Detail & Animation")]
         [Tooltip("How much the detail layer 'erodes' the base shape.")]
@@ -49,7 +49,7 @@ namespace BlackHorizon.HorizonWeatherTime
         public Color baseColor = new Color(0.95f, 0.95f, 0.95f);
 
         [ColorUsage(true, true)]
-        public Color shadowColor = new Color(0.4f, 0.45f, 0.5f);
+        public Color shadowColor = new Color(0.35f, 0.4f, 0.5f);
 
         [Tooltip("How much light is scattered through the cloud (makes them brighter).")]
         [Range(0f, 5f)]

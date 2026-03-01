@@ -27,14 +27,31 @@ namespace BlackHorizon.HorizonWeatherTime
         [Range(0f, 2f)]
         public float moonIntensity = 0.04f;
 
-        [Header("Ambient Settings")]
-        [Tooltip("Color of the ambient light during the day.")]
+        [Header("Ambient Settings - Day (Trilight)")]
+        [Tooltip("Light coming from the sky (top down).")]
         [ColorUsage(true, true)]
-        public Color dayAmbientColor = new Color(0.4f, 0.5f, 0.6f);
+        public Color daySkyColor = new Color(0.4f, 0.5f, 0.6f);
 
-        [Tooltip("Color of the ambient light during the night.")]
+        [Tooltip("Light coming from the horizon (sides).")]
         [ColorUsage(true, true)]
-        public Color nightAmbientColor = new Color(0.05f, 0.05f, 0.1f);
+        public Color dayEquatorColor = new Color(0.3f, 0.35f, 0.4f);
+
+        [Tooltip("Light bouncing off the ground (bottom up).")]
+        [ColorUsage(true, true)]
+        public Color dayGroundColor = new Color(0.2f, 0.2f, 0.2f);
+
+        [Header("Ambient Settings - Night (Trilight)")]
+        [Tooltip("Light coming from the moon/stars (top down).")]
+        [ColorUsage(true, true)]
+        public Color nightSkyColor = new Color(0.05f, 0.05f, 0.1f);
+
+        [Tooltip("Light coming from the horizon (sides).")]
+        [ColorUsage(true, true)]
+        public Color nightEquatorColor = new Color(0.02f, 0.02f, 0.05f);
+
+        [Tooltip("Light bouncing off the ground (bottom up).")]
+        [ColorUsage(true, true)]
+        public Color nightGroundColor = new Color(0.01f, 0.01f, 0.02f);
 
 #if UNITY_EDITOR
         private void OnValidate()

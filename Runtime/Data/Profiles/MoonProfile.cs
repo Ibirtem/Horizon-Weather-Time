@@ -10,10 +10,10 @@ namespace BlackHorizon.HorizonWeatherTime
 
         [Tooltip("Size of the moon in the sky.")]
         [Range(0.005f, 0.1f)]
-        public float moonSize = 0.02f;
+        public float moonSize = 0.012f;
 
         [Tooltip("Visual tint of the moon disk.")]
-        public Color moonColor = Color.white;
+        public Color moonColor = new Color(0.85f, 0.85f, 0.8f, 1f);
 
 #if UNITY_EDITOR
         private void OnValidate()
