@@ -22,6 +22,12 @@ namespace BlackHorizon.HorizonWeatherTime
         private SerializedProperty _allowedWeatherProfilesProp;
         private SerializedProperty _currentProfileIndexProp;
 
+        // --- ASTRONOMY PROPERTIES ---
+        private SerializedProperty _latitudeProp;
+        private SerializedProperty _axialTiltProp;
+        private SerializedProperty _daysInYearProp;
+        private SerializedProperty _dayOfYearProp;
+
         // --- INDEPENDENT LAYER PROPERTIES ---
         private SerializedProperty _lightingIndexProp;
         private SerializedProperty _skyIndexProp;
@@ -54,6 +60,11 @@ namespace BlackHorizon.HorizonWeatherTime
             _sunTimeOfDayProp = serializedObject.FindProperty("_sunTimeOfDay");
             _moonTimeOfDayProp = serializedObject.FindProperty("_moonTimeOfDay");
             _timeSpeedProp = serializedObject.FindProperty("timeSpeed");
+
+            _latitudeProp = serializedObject.FindProperty("latitude");
+            _axialTiltProp = serializedObject.FindProperty("axialTilt");
+            _daysInYearProp = serializedObject.FindProperty("daysInYear");
+            _dayOfYearProp = serializedObject.FindProperty("dayOfYear");
 
             _allowedWeatherProfilesProp = serializedObject.FindProperty("weatherProfilesList");
             _currentProfileIndexProp = serializedObject.FindProperty("_currentProfileIndex");
@@ -119,10 +130,47 @@ namespace BlackHorizon.HorizonWeatherTime
                 EditorGUILayout.PropertyField(serializedObject.FindProperty("simulateMoonPhase"));
                 EditorGUILayout.PropertyField(_timeSpeedProp);
             }
+
+            EditorGUILayout.Space(6);
+
+            // --- ASTRONOMY SECTION ---
+            GUILayout.Label("Astronomy & Location", EditorStyles.boldLabel);
+
+            EditorGUILayout.PropertyField(_latitudeProp, new GUIContent("Latitude (Deg)", "0 = Equator, 90 = North Pole. Affects sun/moon paths and star rotation."));
+
+            const float EARTH_TILT = 23.44f;
+            bool isTiltModified = Mathf.Abs(_axialTiltProp.floatValue - EARTH_TILT) > 0.01f;
+
+            EditorGUILayout.BeginHorizontal();
+
+            Color defaultColor = GUI.color;
+            if (isTiltModified) GUI.color = new Color(1f, 0.92f, 0.75f);
+
+            EditorGUILayout.PropertyField(_axialTiltProp, new GUIContent("Axial Tilt", "Seasonal tilt (Earth ~23.44). Affects day length and sun height."));
+
+            GUI.color = defaultColor;
+
+            if (isTiltModified)
+            {
+                if (GUILayout.Button(new GUIContent("↺", "Reset to Earth Standard (23.44)"), GUILayout.Width(24), GUILayout.Height(18)))
+                {
+                    _axialTiltProp.floatValue = EARTH_TILT;
+                    GUI.FocusControl(null);
+                }
+            }
+            EditorGUILayout.EndHorizontal();
+
+            // 3. Date
+            EditorGUILayout.BeginHorizontal();
+            EditorGUILayout.PropertyField(_dayOfYearProp, new GUIContent("Day of Year"));
+            GUILayout.Label($"/ {_daysInYearProp.floatValue:F0}", GUILayout.Width(40));
+            EditorGUILayout.EndHorizontal();
+
             EditorGUILayout.EndVertical();
 
             EditorGUILayout.Space(4);
 
+            // Time Sliders
             GUI.enabled = !_target.useRealTime;
             EditorGUILayout.PropertyField(_sunTimeOfDayProp, new GUIContent("Sun Position"));
 

@@ -23,10 +23,8 @@ namespace BlackHorizon.HorizonWeatherTime
         [SerializeField] private Light moonLight;
 
         [Header("Configuration")]
-        [Tooltip("An AnimationCurve to control the sun's intensity throughout its cycle. X-axis is time (0-1), Y-axis is intensity (0-1).")]
-        [SerializeField] private AnimationCurve sunIntensityCurve = new AnimationCurve(new Keyframe(0.23f, 0), new Keyframe(0.25f, 1), new Keyframe(0.75f, 1), new Keyframe(0.77f, 0));
-
-        [Tooltip("An AnimationCurve to control the moon's intensity throughout its cycle.")]
+        [Tooltip("Legacy curves are ignored in Astronomy mode. Intensity is now driven by physical altitude.")]
+        [SerializeField] private AnimationCurve sunIntensityCurve = new AnimationCurve(new Keyframe(0, 0), new Keyframe(0.5f, 1), new Keyframe(1, 0));
         [SerializeField] private AnimationCurve moonIntensityCurve = new AnimationCurve(new Keyframe(0, 0), new Keyframe(0.5f, 1), new Keyframe(1, 0));
 
         [HideInInspector] public Color MoonSkyboxColor;
@@ -41,6 +39,9 @@ namespace BlackHorizon.HorizonWeatherTime
         private double _ambientUpdateTimerEditorMode;
 #endif
         private const float AMBIENT_UPDATE_INTERVAL = 0.25f;
+
+        private const float ALT_TRANSITION_MIN = -0.05f;
+        private const float ALT_TRANSITION_MAX = 0.05f;
 
         private void Awake()
         {
@@ -87,6 +88,10 @@ namespace BlackHorizon.HorizonWeatherTime
             return sunLight.intensity > moonLight.intensity ? sunLight : moonLight;
         }
 
+        /// <summary>
+        /// Calculates a standalone global light color. Used by secondary systems (like particle effects)
+        /// to match the environmental lighting without directly reading the Light components.
+        /// </summary>
         public Color CalculateCurrentGlobalLight(
             float sunTime,
             float moonTime,
@@ -94,14 +99,18 @@ namespace BlackHorizon.HorizonWeatherTime
             Color moonCol, float moonIntens,
             Color daySky, Color nightSky)
         {
-            float sunIntensityFactor = sunIntensityCurve.Evaluate(sunTime);
-            float moonIntensityFactor = moonIntensityCurve.Evaluate(moonTime);
+            float sunFactor = 0f;
+            if (sunLight != null)
+            {
+                float sunHeight = -sunLight.transform.forward.y;
+                float linearT = Mathf.InverseLerp(ALT_TRANSITION_MIN, ALT_TRANSITION_MAX, sunHeight);
+                sunFactor = Mathf.SmoothStep(0f, 1f, linearT);
+            }
 
-            Color sunContribution = Color.Lerp(sunHorizon, sunZenith, sunIntensityFactor) * (sunIntensityFactor * sunIntens);
-            Color moonContribution = moonCol * (moonIntensityFactor * moonIntens);
-            Color ambientContribution = Color.Lerp(nightSky, daySky, sunIntensityFactor);
+            Color sunContribution = Color.Lerp(sunHorizon, sunZenith, sunFactor) * (sunFactor * sunIntens);
+            Color moonContribution = moonCol * (1.0f - sunFactor) * moonIntens;
 
-            Color totalLight = sunContribution + moonContribution + ambientContribution;
+            Color totalLight = sunContribution + moonContribution;
 
             // Clamp to avoid absolute darkness
             totalLight.r = Mathf.Max(totalLight.r, 0.05f);
@@ -111,7 +120,13 @@ namespace BlackHorizon.HorizonWeatherTime
             return totalLight;
         }
 
+        /// <summary>
+        /// Applies the calculated astronomical rotations and intensity curves to the Sun and Moon lights.
+        /// Updates the global ambient scene lighting based on the PHYSICAL ALTITUDE of the Sun/Moon.
+        /// </summary>
         public void UpdateLighting(
+            Quaternion sunRotation,
+            Quaternion moonRotation,
             float sunTime,
             float moonTime,
             Color sunHorizon, Color sunZenith, float sunIntens,
@@ -121,49 +136,44 @@ namespace BlackHorizon.HorizonWeatherTime
         {
             if (sunLight == null || moonLight == null) return;
 
-            // 1. Rotation
-            float sunCycleAngle = sunTime * 360f;
-            sunLight.transform.localRotation = Quaternion.Euler(new Vector3(sunCycleAngle - 90f, 170f, 0));
+            // 1. Apply Physical Rotation
+            sunLight.transform.localRotation = sunRotation;
+            moonLight.transform.localRotation = moonRotation;
 
-            float moonCycleAngle = moonTime * 360f;
-            moonLight.transform.localRotation = Quaternion.Euler(new Vector3(moonCycleAngle - 90f, 170f, 0));
+            float sunAltitude = -sunLight.transform.forward.y;
+            float moonAltitude = -moonLight.transform.forward.y;
 
-            float sunHeightVector = -sunLight.transform.forward.y;
-            float geometricSunFactor = Mathf.Clamp01(sunHeightVector / 0.05f);
+            // 3. Calculate "Day Factor" based on Altitude
+            float sunT = Mathf.InverseLerp(ALT_TRANSITION_MIN, ALT_TRANSITION_MAX, sunAltitude);
+            float dayFactor = Mathf.SmoothStep(0f, 1f, sunT);
 
-            // 2. Intensity
-            float sunCurveVal = sunIntensityCurve.Evaluate(sunTime);
-            float moonCurveVal = moonIntensityCurve.Evaluate(moonTime);
+            float sunZenithFactor = Mathf.Clamp01(sunAltitude);
+            sunZenithFactor = Mathf.Pow(sunZenithFactor, 0.5f);
 
-            // 3. Visual of the moon
-            float sunHeightSimple = -Mathf.Cos(sunTime * Mathf.PI * 2f);
-            float twilightTimer = Mathf.InverseLerp(0.15f, -0.05f, sunHeightSimple);
+            // 4. Sun Intensity
+            sunLight.intensity = dayFactor * sunIntens;
+            sunLight.color = Color.Lerp(sunHorizon, sunZenith, sunZenithFactor);
 
-            Color finalMoonVisualColor = moonCol * 2.0f;
-            float transitionCurve = Mathf.Pow(twilightTimer, 3.0f);
-            float minDayAlpha = 0.16f;
-            float maxNightAlpha = 1.0f;
-            float finalAlpha = Mathf.Lerp(minDayAlpha, maxNightAlpha, transitionCurve);
-            finalMoonVisualColor.a = finalAlpha;
+            // 5. Moon Intensity
+            float moonT = Mathf.InverseLerp(ALT_TRANSITION_MIN, ALT_TRANSITION_MAX, moonAltitude);
+            float moonHeightFactor = Mathf.SmoothStep(0f, 1f, moonT);
+            float moonDayDimming = 1.0f - dayFactor;
 
-            float moonLightPower = twilightTimer;
-
-            // 4. Application
-            sunLight.intensity = sunCurveVal * sunIntens * geometricSunFactor;
-            sunLight.color = Color.Lerp(sunHorizon, sunZenith, sunCurveVal);
-
-            moonLight.intensity = moonCurveVal * moonIntens * moonLightPower;
-            MoonSkyboxColor = finalMoonVisualColor;
+            moonLight.intensity = moonHeightFactor * moonDayDimming * moonIntens;
             moonLight.color = moonCol;
 
-            // 5. Shadows and state
+            Color finalMoonVisualColor = moonCol * 2.0f;
+            finalMoonVisualColor.a = Mathf.Lerp(0.16f, 1.0f, moonDayDimming);
+            MoonSkyboxColor = finalMoonVisualColor;
+
+            // 6. Shadows and state
             sunLight.enabled = sunLight.intensity > 0.01f;
             moonLight.enabled = moonLight.intensity > 0.001f;
 
             sunLight.shadows = sunLight.enabled ? LightShadows.Soft : LightShadows.None;
             moonLight.shadows = (moonLight.enabled && !sunLight.enabled) ? LightShadows.Soft : LightShadows.None;
 
-            // 6. Ambient
+            // 7. Ambient (Trilight)
             bool canUpdateAmbient = false;
 #if !COMPILER_UDONSHARP && UNITY_EDITOR
             if (!Application.isPlaying)
@@ -188,13 +198,9 @@ namespace BlackHorizon.HorizonWeatherTime
             {
                 RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Trilight;
 
-                float sunHeightForAmbient = -sunLight.transform.forward.y;
-                float ambientGeoFactor = Mathf.InverseLerp(-0.06f, 0.1f, sunHeightForAmbient);
-                float finalAmbientMix = sunCurveVal * ambientGeoFactor;
-
-                RenderSettings.ambientSkyColor = Color.Lerp(nightSky, daySky, finalAmbientMix);
-                RenderSettings.ambientEquatorColor = Color.Lerp(nightEq, dayEq, finalAmbientMix);
-                RenderSettings.ambientGroundColor = Color.Lerp(nightGrnd, dayGrnd, finalAmbientMix);
+                RenderSettings.ambientSkyColor = Color.Lerp(nightSky, daySky, dayFactor);
+                RenderSettings.ambientEquatorColor = Color.Lerp(nightEq, dayEq, dayFactor);
+                RenderSettings.ambientGroundColor = Color.Lerp(nightGrnd, dayGrnd, dayFactor);
             }
         }
     }

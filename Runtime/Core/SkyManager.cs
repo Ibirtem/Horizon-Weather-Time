@@ -222,9 +222,13 @@ namespace BlackHorizon.HorizonWeatherTime
             _skyboxInstance.SetFloat(MoonSizeID, moonSize);
         }
 
-        public void UpdateStars(float timeOfDay, Vector3 sunDirection,
+        /// <summary>
+        /// Updates the deep space elements.
+        /// Uses the precalculated celestial Euler rotation to position the stars and Milky Way,
+        /// and fades them based on the physical sun altitude to simulate daylight scattering.
+        /// </summary>
+        public void UpdateStars(Vector3 starfieldRotation, Vector3 sunDirection,
             Texture starsTex, Texture mwTex,
-            Vector3 alignment, float rotationSpeed,
             float starsInt, float mwInt,
             float twinkleScale, float twinkleSpeed, float twinkleStrength)
         {
@@ -238,12 +242,9 @@ namespace BlackHorizon.HorizonWeatherTime
             }
             if (mwTex != null) _skyboxInstance.SetTexture(MilkyWayTexID, mwTex);
 
-            Vector3 finalRotation = alignment;
-            finalRotation.y += timeOfDay * 360f * rotationSpeed;
+            _skyboxInstance.SetVector(StarfieldRotationID, starfieldRotation);
 
-            _skyboxInstance.SetVector(StarfieldRotationID, finalRotation);
-
-            // Calculate Fade (Day/Night)
+            // Calculate Fade (Day/Night) based on physical sun height
             float sunHeight = Mathf.InverseLerp(-0.1f, 0.15f, -sunDirection.y);
             float starsAlpha = 1f - sunHeight;
             _skyboxInstance.SetFloat(StarsFadeID, starsAlpha);
