@@ -578,30 +578,12 @@ Shader "Horizon/Procedural Skybox"
                     float3 spaceDir = RotateSphere(direction, _StarfieldRotation);
 
                     float2 starUV = float2(
-                        0.5 + atan2(spaceDir.z, spaceDir.x) / (2.0 * PI),
-                        0.5 - asin(spaceDir.y) / PI
+                        0.5 - atan2(spaceDir.x, -spaceDir.z) / (2.0 * PI),
+                        0.5 + asin(clamp(spaceDir.y, -1.0, 1.0)) / PI
                     );
 
-                    float3 ddxDir = ddx(spaceDir);
-                    float3 ddyDir = ddy(spaceDir);
-
-                    float2 xzDir = float2(spaceDir.x, spaceDir.z);
-                    float invXZLen2 = 1.0 / max(dot(xzDir, xzDir), 1e-10);
-                    float invR      = 1.0 / max(length(spaceDir), 1e-10);
-                    float cosElev   = sqrt(max(1.0 - spaceDir.y * spaceDir.y, 0.0));
-                    float invCosE   = 1.0 / max(cosElev, 1e-6);
-
-                    float2 ddxUV = float2(
-                        (spaceDir.x * ddxDir.z - spaceDir.z * ddxDir.x) * invXZLen2 / (2.0 * PI),
-                        -ddxDir.y * invCosE / PI
-                    );
-                    float2 ddyUV = float2(
-                        (spaceDir.x * ddyDir.z - spaceDir.z * ddyDir.x) * invXZLen2 / (2.0 * PI),
-                        -ddyDir.y * invCosE / PI
-                    );
-
-                    float3 starCol = tex2Dgrad(_StarsTex,    starUV, ddxUV, ddyUV).rgb * _StarsIntensity;
-                    float3 mwRaw   = tex2Dgrad(_MilkyWayTex, starUV, ddxUV, ddyUV).rgb;
+                    float3 starCol = tex2D(_StarsTex,    starUV).rgb * _StarsIntensity;
+                    float3 mwRaw   = tex2D(_MilkyWayTex, starUV).rgb;
                     float mwLum = dot(mwRaw, float3(0.2126, 0.7152, 0.0722));
                     float3 mwCol = lerp(mwRaw, float3(mwLum, mwLum, mwLum), 0.4) * _MilkyWayIntensity;
 
@@ -614,8 +596,9 @@ Shader "Horizon/Procedural Skybox"
 
                     float3 spaceColor = starCol * twinkleMultiplier + mwCol;
 
-                    float horizonPath = 1.0 / max(direction.y, 0.05);
-                    float3 starReddening = exp(-RAYLEIGH_BETA * RAYLEIGH_SCALE_HEIGHT * min(horizonPath, 40.0));
+                    float horizonPath = 1.0 / max(direction.y, 0.15);
+                    float reddeningStrength = max(0.0, horizonPath - 1.0) * 0.12;
+                    float3 starReddening = exp(-RAYLEIGH_BETA * RAYLEIGH_SCALE_HEIGHT * reddeningStrength);
                     spaceColor *= starReddening;
 
                     finalColor += spaceColor * starVisibility;

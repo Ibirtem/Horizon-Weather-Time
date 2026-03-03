@@ -504,8 +504,9 @@ namespace BlackHorizon.HorizonWeatherTime
         }
 
         /// <summary>
-        /// Calculates the current time of day, day of year, and lunar phase.
-        /// Progresses the astronomical timeline based on real-time or simulated time.
+        /// Advances time-of-day, day-of-year, and lunar phase.
+        /// Real-time mode uses system clock + Julian Date for true moon phase.
+        /// Simulation mode advances by deltaTime scaled by timeSpeed.
         /// </summary>
         private void CalculateTime()
         {
@@ -519,7 +520,12 @@ namespace BlackHorizon.HorizonWeatherTime
 
                 dayOfYear = instanceTime.DayOfYear + _sunTimeOfDay;
 
-                moonPhase = (float)((dayOfYear % lunarCycleDays) / lunarCycleDays);
+                double jdNow = DateTimeToJulianDate(currentUtc);
+                double daysSinceNewMoon = jdNow - 2451550.1;
+                double synodicMonth = 29.53058868;
+                moonPhase = (float)((daysSinceNewMoon % synodicMonth) / synodicMonth);
+                if (moonPhase < 0f) moonPhase += 1.0f;
+
                 _moonTimeOfDay = (_sunTimeOfDay + moonPhase) % 1.0f;
             }
             else
@@ -556,11 +562,46 @@ namespace BlackHorizon.HorizonWeatherTime
             }
         }
 
+        /// <summary>
+        /// Converts UTC DateTime to Julian Date for lunar phase calculation.
+        /// Reference epoch: Jan 6, 2000 11:14 UTC (new moon, JD 2451550.1).
+        /// </summary>
+        private double DateTimeToJulianDate(DateTime dt)
+        {
+            int y = dt.Year;
+            int m = dt.Month;
+            int d = dt.Day;
+
+            if (m <= 2)
+            {
+                y -= 1;
+                m += 12;
+            }
+
+            int A = y / 100;
+            int B = 2 - A + (A / 4);
+
+            double jd = (int)(365.25 * (y + 4716)) + (int)(30.6001 * (m + 1)) + d + B - 1524.5;
+            jd += dt.TimeOfDay.TotalDays;
+
+            return jd;
+        }
+
         public void Refresh()
         {
-#if !COMPILER_UDONSHARP && UNITY_EDITOR
-            if (!Application.isPlaying) CalculateTime();
-#endif
+            if (!_isExternallyControlled)
+            {
+                CalculateTime();
+            }
+            UpdateSystem();
+        }
+
+        /// <summary>
+        /// Forces a visual update without recalculating time.
+        /// Safe to call when externally controlled.
+        /// </summary>
+        public void ForceVisualUpdate()
+        {
             UpdateSystem();
         }
 
@@ -655,9 +696,8 @@ namespace BlackHorizon.HorizonWeatherTime
         // =========================================================
 
         /// <summary>
-        /// Core update loop for the weather and time system.
-        /// Calculates astronomical trajectories for the Sun and Moon based on latitude and seasons,
-        /// and synchronizes all active subsystem layers (Lighting, Sky, Fog, Effects).
+        /// Main update loop. Computes sun/moon positions from astronomical parameters
+        /// (season, time, latitude) and dispatches to all subsystems.
         /// </summary>
         private void UpdateSystem()
         {
@@ -686,30 +726,53 @@ namespace BlackHorizon.HorizonWeatherTime
             float safeDays = Mathf.Max(1f, daysInYear);
             float yearProgress = (dayOfYear % safeDays) / safeDays;
 
-            float sunDeclination = axialTilt * Mathf.Sin(yearProgress * Mathf.PI * 2f);
+            float sunDeclination = axialTilt * Mathf.Sin((yearProgress - 0.22f) * Mathf.PI * 2f);
 
-            float sunHourAngle = (_sunTimeOfDay - 0.5f) * 360f;
-
-            Quaternion sunCelestialRot = Quaternion.Euler(90f - latitude, 0f, 0f)
-                                       * Quaternion.Euler(0f, sunHourAngle, 0f)
-                                       * Quaternion.Euler(sunDeclination, 0f, 0f);
-            Vector3 sunDir = sunCelestialRot * Vector3.back;
+            Vector3 sunDir = ComputeCelestialDirection(_sunTimeOfDay, sunDeclination, latitude);
             Quaternion sunLightRot = Quaternion.LookRotation(-sunDir);
 
-            float moonHourAngle = (_moonTimeOfDay - 0.5f) * 360f;
             float moonEclipticOffset = 5.14f * Mathf.Sin(moonPhase * Mathf.PI * 2f);
             float moonDeclination = sunDeclination + moonEclipticOffset;
 
-            Quaternion moonCelestialRot = Quaternion.Euler(90f - latitude, 0f, 0f)
-                                        * Quaternion.Euler(0f, moonHourAngle, 0f)
-                                        * Quaternion.Euler(moonDeclination, 0f, 0f);
-            Vector3 moonDir = moonCelestialRot * Vector3.back;
+            Vector3 moonDir = ComputeCelestialDirection(_moonTimeOfDay, moonDeclination, latitude);
             Quaternion moonLightRot = Quaternion.LookRotation(-moonDir);
 
             Color particleLightColor = ApplyLighting(sunLightRot, moonLightRot);
             Color currentFogColor = ApplyFog();
             ApplySky(currentFogColor);
             ApplyEffects(particleLightColor);
+        }
+
+        /// <summary>
+        /// Converts time-of-day, declination, and observer latitude into a world-space
+        /// direction vector using standard equatorial-to-horizontal transformation.
+        /// Convention: +X=East, +Y=Up, +Z=North. TimeOfDay 0=midnight, 0.5=noon.
+        /// </summary>
+        private Vector3 ComputeCelestialDirection(float timeOfDay, float declination, float latitudeDeg)
+        {
+            float haDeg = (timeOfDay - 0.5f) * 360f;
+
+            float ha = haDeg * Mathf.Deg2Rad;
+            float dec = declination * Mathf.Deg2Rad;
+
+            float sinDec = Mathf.Sin(dec);
+            float cosDec = Mathf.Cos(dec);
+            float sinHA = Mathf.Sin(ha);
+            float cosHA = Mathf.Cos(ha);
+
+            float x_eq = -cosDec * sinHA;
+            float y_eq = sinDec;
+            float z_eq = -cosDec * cosHA;
+
+            float tiltAngle = (90f - latitudeDeg) * Mathf.Deg2Rad;
+            float sinTilt = Mathf.Sin(tiltAngle);
+            float cosTilt = Mathf.Cos(tiltAngle);
+
+            float x = x_eq;
+            float y = y_eq * cosTilt - z_eq * sinTilt;
+            float z = y_eq * sinTilt + z_eq * cosTilt;
+
+            return new Vector3(x, y, z).normalized;
         }
 
         /// <summary>
@@ -779,8 +842,8 @@ namespace BlackHorizon.HorizonWeatherTime
         }
 
         /// <summary>
-        /// Updates the procedural skybox material, dispatching data for atmosphere, stars, moon, and clouds.
-        /// Calculates the sidereal rotation for the starfield based on latitude and time of day.
+        /// Updates skybox material with atmosphere, starfield, moon, clouds, and fog.
+        /// Computes Local Sidereal Time for proper celestial pole rotation.
         /// </summary>
         private void ApplySky(Color currentFogColor)
         {
@@ -791,20 +854,28 @@ namespace BlackHorizon.HorizonWeatherTime
 
             if (sun != null && _bake_rayleigh != null && _skyIndex < _bake_rayleigh.Length)
             {
-                // Atmosphere
                 _skyManager.UpdateSky(sun.transform.forward,
                     _bake_rayleigh[_skyIndex], _bake_turbidity[_skyIndex],
                     _bake_mieCoeff[_skyIndex], _bake_mieG[_skyIndex], _bake_exposure[_skyIndex]
                 );
 
-                // Stars & Deep Space
                 Texture safeStars = (_bake_starsTex != null && _skyIndex < _bake_starsTex.Length) ? _bake_starsTex[_skyIndex] : null;
                 Texture safeMW = (_bake_milkyWayTex != null && _skyIndex < _bake_milkyWayTex.Length) ? _bake_milkyWayTex[_skyIndex] : null;
 
                 Vector3 baseAlign = _bake_starAlignment[_skyIndex];
-                float siderealAngle = (_sunTimeOfDay * 360f * _bake_starSpeed[_skyIndex]) + baseAlign.y;
 
-                Vector3 starfieldEuler = new Vector3(baseAlign.x + (90f - latitude), siderealAngle, baseAlign.z);
+                float safeDays = Mathf.Max(1f, daysInYear);
+                float vernalEquinoxDay = safeDays * 0.22f;
+                float yearOffset = ((dayOfYear - vernalEquinoxDay) / safeDays) * 360f;
+                float siderealAngle = _sunTimeOfDay * 360f * _bake_starSpeed[_skyIndex] + yearOffset + 180f;
+
+                float latTilt = 90f - latitude;
+
+                Vector3 starfieldEuler = new Vector3(
+                    -latTilt + baseAlign.x,
+                    siderealAngle + baseAlign.y,
+                    baseAlign.z
+                );
 
                 _skyManager.UpdateStars(starfieldEuler, sun.transform.forward,
                     safeStars, safeMW,
@@ -815,7 +886,6 @@ namespace BlackHorizon.HorizonWeatherTime
                     _bake_twinkleStrength[_skyIndex]
                 );
 
-                // Clouds
                 if (_bake_cloudAltitude != null && _cloudIndex < _bake_cloudAltitude.Length)
                 {
                     Texture safeCloudTex = (_bake_cloudTex != null && _cloudIndex < _bake_cloudTex.Length) ? _bake_cloudTex[_cloudIndex] : null;
@@ -830,7 +900,6 @@ namespace BlackHorizon.HorizonWeatherTime
                     );
                 }
 
-                // Fog Integration
                 if (_bake_fogEnabled != null && _fogIndex < _bake_fogEnabled.Length)
                 {
                     _skyManager.UpdateSkyboxFog(_bake_fogEnabled[_fogIndex], currentFogColor, _bake_fogSkyBlend[_fogIndex]);
@@ -839,7 +908,6 @@ namespace BlackHorizon.HorizonWeatherTime
 
             if (moon != null && _bake_moonSize != null && _moonIndex < _bake_moonSize.Length)
             {
-                // Moon
                 Texture safeMoonTex = (_bake_moonTex != null && _moonIndex < _bake_moonTex.Length) ? _bake_moonTex[_moonIndex] : null;
                 _skyManager.UpdateMoon(moon.transform.forward, safeMoonTex, _lightingManager.MoonSkyboxColor, _bake_moonSize[_moonIndex]);
             }
