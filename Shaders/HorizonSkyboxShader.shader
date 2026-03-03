@@ -51,6 +51,9 @@ Shader "Horizon/Procedural Skybox"
         [HideInInspector] _MieDirectionalG ("Mie Directional G", Range(0.0, 1.0)) = 0.76
         [HideInInspector] _Exposure ("Exposure", Float) = 15.0
         [HideInInspector] _SunPosition ("Sun Direction", Vector) = (0.0, 0.5, 0.0, 0.0)
+
+        [Header(Optimization)]
+        [NoScaleOffset] _TransmittanceLUT ("Transmittance LUT", 2D) = "white" {}
     }
 
     SubShader
@@ -120,6 +123,8 @@ Shader "Horizon/Procedural Skybox"
             // Horizon Fog
             float4 _HorizonFogColor;
             float  _HorizonFogBlend;
+
+            sampler2D _TransmittanceLUT;
 
             // =====================================================================
             //  CONSTANTS
@@ -280,24 +285,18 @@ Shader "Horizon/Procedural Skybox"
             }
 
             // =====================================================================
-            //  ATMOSPHERE: Optical Depth Integration
-            //  Numerically integrates density along a ray segment.
-            //  Returns accumulated (rayleigh, mie, ozone) column densities.
+            //  ATMOSPHERE: LUT Sampling
+            //  Replaces the expensive ComputeOpticalDepth integration loop.
             // =====================================================================
 
-            float3 ComputeOpticalDepth(float3 origin, float3 dir, float rayLength)
+            float3 SampleOpticalDepthLUT(float altitude, float cosTheta)
             {
-                float stepSize = rayLength / float(ATMOSPHERE_STEPS);
-                float3 totalDensity = 0.0;
+                float v = sqrt(saturate(altitude / ATMOSPHERE_THICKNESS));
 
-                [unroll]
-                for (int i = 0; i < ATMOSPHERE_STEPS; i++)
-                {
-                    float t = (float(i) + 0.5) * stepSize;
-                    float altitude = max(0.0, length(origin + dir * t) - PLANET_GROUND_RADIUS);
-                    totalDensity += AtmosphereDensity(altitude) * stepSize;
-                }
-                return totalDensity;
+                float absCos = abs(cosTheta);
+                float u = 0.5 + sign(cosTheta) * 0.5 * sqrt(absCos);
+
+                return tex2Dlod(_TransmittanceLUT, float4(u, v, 0, 0)).rgb;
             }
 
             // =====================================================================
@@ -361,27 +360,23 @@ Shader "Horizon/Procedural Skybox"
                                            + betaO * localDensity.z) * stepSize;
                     float3 stepTransmittance = exp(-stepExtinction);
 
-                    // Sun-ray optical depth from sample point to atmosphere edge
-                    float2 sunAtmosHit  = AtmosphereRayIntersect(samplePos, sunDir, ATMOSPHERE_RADIUS);
-                    float2 sunGroundHit = AtmosphereRayIntersect(samplePos, sunDir, PLANET_GROUND_RADIUS);
-                    bool sunOccluded = (sunGroundHit.x > 0.0);
+                    float sunCosTheta = dot(normalize(samplePos), sunDir);
+                    
+                    float3 sunOpticalDepth = SampleOpticalDepthLUT(altitude, sunCosTheta);
 
-                    float3 inscatterContribution = 0.0;
+                    float3 sunTransmittance = exp(-(betaR * sunOpticalDepth.x
+                                                   + betaM * sunOpticalDepth.y
+                                                   + betaO * sunOpticalDepth.z));
 
-                    if (!sunOccluded && sunAtmosHit.y > 0.0)
+                    float3 inscatterContribution = 0.0; 
+                    
+                    float sunTransLum = dot(sunTransmittance, float3(0.2126, 0.7152, 0.0722));
+                    
+                    if (sunTransLum > 0.00001) 
                     {
-                        float3 sunOpticalDepth = ComputeOpticalDepth(samplePos, sunDir, sunAtmosHit.y);
-                        float3 sunTransmittance = exp(-(betaR * sunOpticalDepth.x
-                                                       + betaM * sunOpticalDepth.y
-                                                       + betaO * sunOpticalDepth.z));
-
-                        float sunTransLum = dot(sunTransmittance, float3(0.2126, 0.7152, 0.0722));
-                        if (sunTransLum > 0.0001)
-                        {
-                            float3 scatterR = betaR * localDensity.x * phaseR;
-                            float3 scatterM = betaM * localDensity.y * phaseM;
-                            inscatterContribution = sunTransmittance * (scatterR + scatterM) * stepSize;
-                        }
+                        float3 scatterR = betaR * localDensity.x * phaseR;
+                        float3 scatterM = betaM * localDensity.y * phaseM;
+                        inscatterContribution = sunTransmittance * (scatterR + scatterM) * stepSize;
                     }
 
                     // Multiple scattering approximation (vanishes at night)

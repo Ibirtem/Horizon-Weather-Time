@@ -50,6 +50,8 @@ namespace BlackHorizon.HorizonWeatherTime
         private bool _integrationActive = false;
         private string _statusMessage = "";
 
+        private bool _lutMissing = false;
+
         private void OnEnable()
         {
             _target = (WeatherTimeSystem)target;
@@ -87,6 +89,9 @@ namespace BlackHorizon.HorizonWeatherTime
             CheckAndConfigureDependencies();
             CheckAndAutoSetupVRChatIntegration();
 
+            // Initial check for LUT
+            CheckLUTStatus();
+
             EditorApplication.delayCall += () => { if (_target != null) _target.Refresh(); };
         }
 
@@ -96,6 +101,23 @@ namespace BlackHorizon.HorizonWeatherTime
 
             // 1. HEADER
             HorizonEditorUtils.DrawHorizonHeader("Weather & Time System", this);
+
+            // 0. CRITICAL WARNINGS
+            if (_lutMissing)
+            {
+                EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+                GUI.color = new Color(1f, 0.5f, 0.5f);
+                GUILayout.Label("⚠️ Missing Atmosphere Data", EditorStyles.boldLabel);
+                GUI.color = Color.white;
+                EditorGUILayout.HelpBox("The Atmosphere Optical Depth LUT is missing! The skybox will not render correctly.", MessageType.Error);
+
+                if (GUILayout.Button("Regenerate Atmosphere LUT", GUILayout.Height(30)))
+                {
+                    GenerateAndAssignLUT();
+                }
+                EditorGUILayout.EndVertical();
+                EditorGUILayout.Space(10);
+            }
 
             // 2. SECTIONS
             DrawTimelineSection();
@@ -107,6 +129,60 @@ namespace BlackHorizon.HorizonWeatherTime
             DrawVRChatStatus();
 
             serializedObject.ApplyModifiedProperties();
+        }
+
+        private void CheckLUTStatus()
+        {
+            var lut = AssetDatabase.LoadAssetAtPath<Texture2D>(AtmosphereLUTBaker.LUT_PATH);
+
+            _lutMissing = (lut == null);
+
+            if (lut != null && _skyManagerProp.objectReferenceValue != null)
+            {
+                var manager = (SkyManager)_skyManagerProp.objectReferenceValue;
+                var so = new SerializedObject(manager);
+                var prop = so.FindProperty("transmittanceLUT");
+                if (prop.objectReferenceValue == null)
+                {
+                    prop.objectReferenceValue = lut;
+                    so.ApplyModifiedProperties();
+                }
+            }
+        }
+
+        private void GenerateAndAssignLUT()
+        {
+            Texture2D tex = AtmosphereLUTBaker.GenerateLUT();
+
+            if (tex == null)
+            {
+                Debug.LogError("<b><color=#FF3333>[ERROR]</color></b> [WeatherTimeSystem] Failed to generate Atmosphere LUT.");
+                return;
+            }
+
+            if (_skyManagerProp.objectReferenceValue != null)
+            {
+                SkyManager manager = _skyManagerProp.objectReferenceValue as SkyManager;
+
+                if (manager != null)
+                {
+                    SerializedObject so = new SerializedObject(manager);
+                    SerializedProperty prop = so.FindProperty("transmittanceLUT");
+
+                    if (prop != null)
+                    {
+                        prop.objectReferenceValue = tex;
+                        so.ApplyModifiedProperties();
+                    }
+                }
+            }
+
+            _lutMissing = false;
+
+            _target.Refresh();
+            _target.ForceVisualUpdate();
+
+            UnityEditor.SceneView.RepaintAll();
         }
 
         // --- SECTION DRAWERS ---
@@ -397,6 +473,7 @@ namespace BlackHorizon.HorizonWeatherTime
             CheckAndConfigureSkyboxMaterial();
             CheckAndConfigureParticleAssets();
             CheckAndConfigureOcclusionCamera();
+            CheckLUTStatus();
 
             AssetDatabase.SaveAssets();
         }
@@ -1161,6 +1238,11 @@ namespace BlackHorizon.HorizonWeatherTime
             Undo.RegisterCreatedObjectUndo(go, "Create Horizon Weather Time System");
 
             Selection.activeObject = go;
+
+            if (AssetDatabase.LoadAssetAtPath<Texture2D>(AtmosphereLUTBaker.LUT_PATH) == null)
+            {
+                AtmosphereLUTBaker.GenerateLUT();
+            }
         }
     }
 }

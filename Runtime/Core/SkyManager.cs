@@ -20,6 +20,12 @@ namespace BlackHorizon.HorizonWeatherTime
         public Material skyboxMaterial;
         [SerializeField] private Shader skyboxShader;
 
+        [Header("Internal Data")]
+        [Tooltip("Pre-baked Optical Depth LUT for atmospheric scattering.")]
+        public Texture2D transmittanceLUT;
+
+        private int TransmittanceLUT_ID;
+
         private Material _skyboxInstance;
         private Material _originalSkybox;
         private Texture _currentStarsTexture;
@@ -118,6 +124,8 @@ namespace BlackHorizon.HorizonWeatherTime
             FogColorID = VRCShader.PropertyToID("_HorizonFogColor");
             FogBlendID = VRCShader.PropertyToID("_HorizonFogBlend");
 
+            TransmittanceLUT_ID = VRCShader.PropertyToID("_TransmittanceLUT");
+
             _areIDsInitialized = true;
         }
 
@@ -193,6 +201,11 @@ namespace BlackHorizon.HorizonWeatherTime
             EnsureInitialized();
             if (_skyboxInstance == null) return;
             if (RenderSettings.skybox != _skyboxInstance) RenderSettings.skybox = _skyboxInstance;
+
+            if (transmittanceLUT != null)
+            {
+                _skyboxInstance.SetTexture(TransmittanceLUT_ID, transmittanceLUT);
+            }
 
             Vector3 directionToSun = -sunDirection.normalized;
 
