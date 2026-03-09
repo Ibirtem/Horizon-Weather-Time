@@ -14,11 +14,15 @@ namespace BlackHorizon.HorizonWeatherTime
         private WeatherTimeSystem _target;
 
         // --- PROPERTIES ---
-        private SerializedProperty _useRealTimeProp;
+        private SerializedProperty _timeModeProp;
         private SerializedProperty _timeZoneOffsetProp;
         private SerializedProperty _sunTimeOfDayProp;
         private SerializedProperty _moonTimeOfDayProp;
         private SerializedProperty _timeSpeedProp;
+        private SerializedProperty _simulateMoonPhaseProp;
+        private SerializedProperty _moonPhaseProp;
+        private SerializedProperty _lunarCycleDaysProp;
+
         private SerializedProperty _allowedWeatherProfilesProp;
         private SerializedProperty _currentProfileIndexProp;
 
@@ -43,6 +47,7 @@ namespace BlackHorizon.HorizonWeatherTime
         private SerializedProperty _reflectionManagerProp;
 
         // UI State
+        private bool _showAstronomy = false;
         private bool _showLayerOverrides = false;
 
         // VRChat State
@@ -57,11 +62,14 @@ namespace BlackHorizon.HorizonWeatherTime
             _target = (WeatherTimeSystem)target;
 
             // Linking Core Properties
-            _useRealTimeProp = serializedObject.FindProperty("useRealTime");
+            _timeModeProp = serializedObject.FindProperty("timeMode");
             _timeZoneOffsetProp = serializedObject.FindProperty("timeZoneOffset");
             _sunTimeOfDayProp = serializedObject.FindProperty("_sunTimeOfDay");
             _moonTimeOfDayProp = serializedObject.FindProperty("_moonTimeOfDay");
             _timeSpeedProp = serializedObject.FindProperty("timeSpeed");
+            _simulateMoonPhaseProp = serializedObject.FindProperty("simulateMoonPhase");
+            _moonPhaseProp = serializedObject.FindProperty("moonPhase");
+            _lunarCycleDaysProp = serializedObject.FindProperty("lunarCycleDays");
 
             _latitudeProp = serializedObject.FindProperty("latitude");
             _axialTiltProp = serializedObject.FindProperty("axialTilt");
@@ -191,71 +199,101 @@ namespace BlackHorizon.HorizonWeatherTime
         {
             HorizonEditorUtils.DrawSectionHeader("TIMELINE & SIMULATION");
 
-            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
             EditorGUI.BeginChangeCheck();
 
-            EditorGUILayout.PropertyField(_useRealTimeProp);
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
 
-            if (_target.useRealTime)
+            // --- 1. TIME MANAGEMENT ---
+            GUILayout.Label("Time Management", EditorStyles.boldLabel);
+            EditorGUILayout.PropertyField(_timeModeProp);
+
+            int currentMode = _timeModeProp.enumValueIndex;
+            // 0 = SyncWithSystemClock, 1 = SimulatedFlow, 2 = StaticManual
+
+            if (currentMode == 0)
             {
                 EditorGUILayout.PropertyField(_timeZoneOffsetProp);
                 DrawTimeDebugInfo();
             }
-            else
+            else if (currentMode == 1)
             {
-                EditorGUILayout.PropertyField(serializedObject.FindProperty("simulateMoonPhase"));
                 EditorGUILayout.PropertyField(_timeSpeedProp);
             }
 
             EditorGUILayout.Space(6);
 
-            // --- ASTRONOMY SECTION ---
-            GUILayout.Label("Astronomy & Location", EditorStyles.boldLabel);
+            // --- 2. CELESTIAL CONTROL ---
+            GUILayout.Label("Celestial Control", EditorStyles.boldLabel);
 
-            EditorGUILayout.PropertyField(_latitudeProp, new GUIContent("Latitude (Deg)", "0 = Equator, 90 = North Pole. Affects sun/moon paths and star rotation."));
+            GUI.enabled = currentMode != 0;
+            EditorGUILayout.PropertyField(_sunTimeOfDayProp, new GUIContent("Sun Position"));
+            GUI.enabled = true;
 
-            const float EARTH_TILT = 23.44f;
-            bool isTiltModified = Mathf.Abs(_axialTiltProp.floatValue - EARTH_TILT) > 0.01f;
-
-            EditorGUILayout.BeginHorizontal();
-
-            Color defaultColor = GUI.color;
-            if (isTiltModified) GUI.color = new Color(1f, 0.92f, 0.75f);
-
-            EditorGUILayout.PropertyField(_axialTiltProp, new GUIContent("Axial Tilt", "Seasonal tilt (Earth ~23.44). Affects day length and sun height."));
-
-            GUI.color = defaultColor;
-
-            if (isTiltModified)
+            if (currentMode != 0)
             {
-                if (GUILayout.Button(new GUIContent("↺", "Reset to Earth Standard (23.44)"), GUILayout.Width(24), GUILayout.Height(18)))
+                EditorGUILayout.PropertyField(_simulateMoonPhaseProp, new GUIContent("Simulate Moon Phase"));
+                if (_simulateMoonPhaseProp.boolValue)
                 {
-                    _axialTiltProp.floatValue = EARTH_TILT;
-                    GUI.FocusControl(null);
+                    EditorGUI.indentLevel++;
+                    EditorGUILayout.PropertyField(_moonPhaseProp, new GUIContent("Current Phase"));
+                    if (currentMode == 1)
+                    {
+                        EditorGUILayout.PropertyField(_lunarCycleDaysProp, new GUIContent("Lunar Cycle (Days)"));
+                    }
+                    EditorGUI.indentLevel--;
                 }
             }
-            EditorGUILayout.EndHorizontal();
 
-            // 3. Date
-            EditorGUILayout.BeginHorizontal();
-            EditorGUILayout.PropertyField(_dayOfYearProp, new GUIContent("Day of Year"));
-            GUILayout.Label($"/ {_daysInYearProp.floatValue:F0}", GUILayout.Width(40));
-            EditorGUILayout.EndHorizontal();
+            bool lockMoon = currentMode == 0 || _simulateMoonPhaseProp.boolValue;
+            EditorGUI.BeginDisabledGroup(lockMoon);
+            EditorGUILayout.PropertyField(_moonTimeOfDayProp, new GUIContent("Moon Position"));
+            EditorGUI.EndDisabledGroup();
 
             EditorGUILayout.EndVertical();
 
             EditorGUILayout.Space(4);
 
-            // Time Sliders
-            GUI.enabled = !_target.useRealTime;
-            EditorGUILayout.PropertyField(_sunTimeOfDayProp, new GUIContent("Sun Position"));
+            _showAstronomy = EditorGUILayout.Foldout(_showAstronomy, "Astronomy & Geography", true, EditorStyles.foldoutHeader);
+            if (_showAstronomy)
+            {
+                EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+                EditorGUI.indentLevel++;
 
-            bool lockMoon = _target.useRealTime || _target.simulateMoonPhase;
-            EditorGUI.BeginDisabledGroup(lockMoon);
-            EditorGUILayout.PropertyField(_moonTimeOfDayProp, new GUIContent("Moon Position"));
-            EditorGUI.EndDisabledGroup();
+                EditorGUILayout.PropertyField(_latitudeProp, new GUIContent("Latitude (Deg)", "0 = Equator, 90 = North Pole. Affects sun/moon paths and star rotation."));
 
-            GUI.enabled = true;
+                const float EARTH_TILT = 23.44f;
+                bool isTiltModified = Mathf.Abs(_axialTiltProp.floatValue - EARTH_TILT) > 0.01f;
+
+                EditorGUILayout.BeginHorizontal();
+
+                Color defaultColor = GUI.color;
+                if (isTiltModified) GUI.color = new Color(1f, 0.92f, 0.75f);
+
+                EditorGUILayout.PropertyField(_axialTiltProp, new GUIContent("Axial Tilt", "Seasonal tilt (Earth ~23.44). Affects day length and sun height."));
+
+                GUI.color = defaultColor;
+
+                if (isTiltModified)
+                {
+                    if (GUILayout.Button(new GUIContent("↺", "Reset to Earth Standard (23.44)"), GUILayout.Width(24), GUILayout.Height(18)))
+                    {
+                        _axialTiltProp.floatValue = EARTH_TILT;
+                        GUI.FocusControl(null);
+                    }
+                }
+                EditorGUILayout.EndHorizontal();
+
+                //  --- 3. DATE ---
+                EditorGUILayout.BeginHorizontal();
+                EditorGUILayout.PropertyField(_dayOfYearProp, new GUIContent("Day of Year"));
+                GUILayout.Label($"/ {_daysInYearProp.floatValue:F0}", GUILayout.Width(40));
+                EditorGUILayout.EndHorizontal();
+
+                EditorGUI.indentLevel--;
+                EditorGUILayout.EndVertical();
+            }
+
+            EditorGUILayout.Space(4);
 
             if (EditorGUI.EndChangeCheck())
             {
@@ -397,7 +435,7 @@ namespace BlackHorizon.HorizonWeatherTime
 
         private void DrawTimeDebugInfo()
         {
-            if (_target.useRealTime)
+            if (_target.timeMode == TimeMode.SyncWithSystemClock)
             {
                 DateTime currentUtc = DateTime.UtcNow;
                 DateTime instanceTime = currentUtc.AddHours(_target.timeZoneOffset);

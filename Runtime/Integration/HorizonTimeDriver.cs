@@ -31,7 +31,7 @@ namespace BlackHorizon.HorizonWeatherTime
 
             if (targetSystem != null)
             {
-                if (!targetSystem.useRealTime)
+                if (targetSystem.timeMode != TimeMode.SyncWithSystemClock)
                 {
                     _manualTime = targetSystem._sunTimeOfDay;
                 }
@@ -51,7 +51,7 @@ namespace BlackHorizon.HorizonWeatherTime
 
             float currentTime01 = 0f;
 
-            if (targetSystem.useRealTime)
+            if (targetSystem.timeMode == TimeMode.SyncWithSystemClock)
             {
                 System.DateTime currentUtc = System.DateTime.UtcNow;
                 
@@ -62,9 +62,13 @@ namespace BlackHorizon.HorizonWeatherTime
             else
             {    
                 _manualTime = targetSystem._sunTimeOfDay;
-                _manualTime += (Time.deltaTime / 86400f) * targetSystem.timeSpeed;
-                _manualTime %= 1.0f;
                 
+                if (targetSystem.timeMode == TimeMode.SimulatedFlow)
+                {
+                    _manualTime += (Time.deltaTime / 86400f) * targetSystem.timeSpeed;
+                }
+                
+                _manualTime %= 1.0f;
                 currentTime01 = _manualTime;
             }
 

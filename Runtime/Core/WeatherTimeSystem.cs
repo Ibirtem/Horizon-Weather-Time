@@ -9,6 +9,16 @@ using VRC.Udon;
 
 namespace BlackHorizon.HorizonWeatherTime
 {
+    /// <summary>
+    /// Defines how the time of day advances in the system.
+    /// </summary>
+    public enum TimeMode
+    {
+        SyncWithSystemClock,
+        SimulatedFlow,
+        StaticManual
+    }
+
     [ExecuteInEditMode]
 #if UDONSHARP
     public class WeatherTimeSystem : UdonSharpBehaviour
@@ -17,9 +27,9 @@ namespace BlackHorizon.HorizonWeatherTime
 #endif
     {
         [Header("Time Settings")]
-        public bool useRealTime = true;
-        public bool simulateMoonPhase = true;
-        [Range(-12f, 14f)]
+        [Tooltip("Defines how the celestial bodies move over time.")]
+        public TimeMode timeMode = TimeMode.SyncWithSystemClock;
+        public bool simulateMoonPhase = true; [Range(-12f, 14f)]
         public float timeZoneOffset = 3.0f;
 
         [Header("Simulation Settings")]
@@ -504,13 +514,11 @@ namespace BlackHorizon.HorizonWeatherTime
         }
 
         /// <summary>
-        /// Advances time-of-day, day-of-year, and lunar phase.
-        /// Real-time mode uses system clock + Julian Date for true moon phase.
-        /// Simulation mode advances by deltaTime scaled by timeSpeed.
+        /// Advances time-of-day, day-of-year, and lunar phase based on the current TimeMode.
         /// </summary>
         private void CalculateTime()
         {
-            if (useRealTime)
+            if (timeMode == TimeMode.SyncWithSystemClock)
             {
                 DateTime currentUtc = DateTime.UtcNow;
                 DateTime instanceTime = currentUtc.AddHours(timeZoneOffset);
@@ -534,7 +542,7 @@ namespace BlackHorizon.HorizonWeatherTime
 #if !COMPILER_UDONSHARP && UNITY_EDITOR
                 shouldSimulate = Application.isPlaying;
 #endif
-                if (shouldSimulate)
+                if (shouldSimulate && timeMode == TimeMode.SimulatedFlow)
                 {
                     float dayDelta = (Time.deltaTime * timeSpeed) / SECONDS_IN_DAY;
 
