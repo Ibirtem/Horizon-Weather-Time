@@ -6,6 +6,9 @@ using System.Collections.Generic;
 
 namespace BlackHorizon.HorizonWeatherTime
 {
+    /// <summary>
+    /// Editor utility for generating high-accuracy Star Maps from the HYG Database.
+    /// </summary>
     public class StarMapGenerator : EditorWindow
     {
         public enum ProjectionMode
@@ -16,27 +19,30 @@ namespace BlackHorizon.HorizonWeatherTime
 
         private TextAsset _csvFile;
 
-        // --- Settings ---
+        [Header("Projection Settings")]
+        private bool _useCubemap = true;
         private ProjectionMode _projection = ProjectionMode.Equatorial;
         private int _resolutionWidth = 4096;
+
+        [Header("Visuals")]
         private float _magThreshold = 6.5f;
         private float _starSize = 2.0f;
         private float _brightnessExp = 2.2f;
+        private bool _saveAsEXR = true;
 
-        // --- Adjustments ---
+        [Header("Adjustments")]
         [Range(0f, 1f)] private float _horizontalShift = 0.5f;
         private bool _mirrorHorizontal = true;
         private bool _mirrorVertical = false;
-        private bool _saveAsEXR = true;
 
-        // --- Constellations ---
+        [Header("Constellations")]
         private bool _drawConstellations = true;
         private float _constellationLineWidth = 1.5f;
         private float _constellationLineIntensity = 0.15f;
         private Color _constellationLineColor = new Color(0.3f, 0.5f, 1.0f, 1.0f);
         private float _constellationMatchRadius = 1.5f;
 
-        // --- Debug ---
+        [Header("Debug")]
         private bool _drawDebugGuides = false;
 
         private const string SAVE_PATH_PNG = "Assets/Horizon Weather & Time/Textures/Sky/Horizon_StarMap_Gen.png";
@@ -49,8 +55,23 @@ namespace BlackHorizon.HorizonWeatherTime
             public float ra;
             public float dec;
             public float mag;
+            public float ci;
         }
+
         private List<CatalogStar> _catalogStars;
+
+        /// <summary>
+        /// Grid mapping for Unity's standard Horizontal Cross (4x3) Cubemap layout.
+        /// </summary>
+        private static readonly Vector2Int[] FaceToGrid = new Vector2Int[]
+        {
+            new Vector2Int(2, 1), // 0: +X (Right)
+            new Vector2Int(0, 1), // 1: -X (Left)
+            new Vector2Int(1, 0), // 2: +Y (Up)
+            new Vector2Int(1, 2), // 3: -Y (Down)
+            new Vector2Int(1, 1), // 4: +Z (Forward)
+            new Vector2Int(3, 1)  // 5: -Z (Back)
+        };
 
         [MenuItem("Tools/Horizon/WeatherTime/Generate Star Map (HYG)")]
         public static void ShowWindow()
@@ -68,10 +89,16 @@ namespace BlackHorizon.HorizonWeatherTime
             EditorGUILayout.Space();
             GUILayout.Label("Projection & Orientation", EditorStyles.boldLabel);
 
-            _projection = (ProjectionMode)EditorGUILayout.EnumPopup("Coordinate System", _projection);
+            _useCubemap = EditorGUILayout.Toggle("Render as Cubemap (4x3 Cross)", _useCubemap);
+
             _mirrorHorizontal = EditorGUILayout.Toggle("Mirror Horizontal", _mirrorHorizontal);
             _mirrorVertical = EditorGUILayout.Toggle("Mirror Vertical", _mirrorVertical);
-            _horizontalShift = EditorGUILayout.Slider("Phase Shift", _horizontalShift, 0f, 1f);
+            _horizontalShift = EditorGUILayout.Slider("Phase Shift (RA)", _horizontalShift, 0f, 1f);
+
+            if (!_useCubemap)
+            {
+                _projection = (ProjectionMode)EditorGUILayout.EnumPopup("Coordinate System", _projection);
+            }
 
             EditorGUILayout.Space();
             GUILayout.Label("Visuals", EditorStyles.boldLabel);
@@ -86,6 +113,7 @@ namespace BlackHorizon.HorizonWeatherTime
             EditorGUILayout.Space();
             GUILayout.Label("Constellation Lines", EditorStyles.boldLabel);
             _drawConstellations = EditorGUILayout.Toggle("Draw Constellations", _drawConstellations);
+
             if (_drawConstellations)
             {
                 _constellationLineWidth = EditorGUILayout.Slider("Line Width (Px)", _constellationLineWidth, 0.5f, 5.0f);
@@ -122,14 +150,85 @@ namespace BlackHorizon.HorizonWeatherTime
             }
         }
 
+        /// <summary>
+        /// Converts Celestial Coordinates (RA/Dec) into a Unity World-Space Direction.
+        /// </summary>
+        private Vector3 CelestialDirToUnityDir(CelestialPoint p)
+        {
+            return CelestialDirToUnityDir(p.ra, p.dec);
+        }
+
+        private Vector3 CelestialDirToUnityDir(float raHours, float decDeg)
+        {
+            float shiftedRA = (raHours + _horizontalShift * 24.0f) % 24.0f;
+            if (shiftedRA < 0) shiftedRA += 24.0f;
+
+            float raRad = shiftedRA * 15.0f * Mathf.Deg2Rad;
+            float decRad = decDeg * Mathf.Deg2Rad;
+
+            if (_mirrorHorizontal) raRad = -raRad;
+            if (_mirrorVertical) decRad = -decRad;
+
+            float x = Mathf.Cos(decRad) * Mathf.Sin(raRad);
+            float y = Mathf.Sin(decRad);
+            float z = Mathf.Cos(decRad) * Mathf.Cos(raRad);
+
+            return new Vector3(x, y, z);
+        }
+
+        /// <summary>
+        /// Projects a 3D direction onto a specific face of a 4x3 Horizontal Cross texture.
+        /// Returns Vector3(U, V, FaceIndex).
+        /// </summary>
+        private Vector3 GetCubeFaceUV(Vector3 dir)
+        {
+            float absX = Mathf.Abs(dir.x);
+            float absY = Mathf.Abs(dir.y);
+            float absZ = Mathf.Abs(dir.z);
+            int face = 0;
+            float u = 0, v = 0, ma = 0;
+
+            if (absX >= absY && absX >= absZ)
+            {
+                face = dir.x > 0 ? 0 : 1; // +X, -X
+                ma = absX; u = dir.x > 0 ? -dir.z : dir.z; v = dir.y;
+            }
+            else if (absY >= absX && absY >= absZ)
+            {
+                face = dir.y > 0 ? 2 : 3; // +Y, -Y
+                ma = absY; u = dir.x; v = dir.y > 0 ? -dir.z : dir.z;
+            }
+            else
+            {
+                face = dir.z > 0 ? 4 : 5; // +Z, -Z
+                ma = absZ; u = dir.z > 0 ? dir.x : -dir.x; v = dir.y;
+            }
+            return new Vector3((u / ma + 1f) * 0.5f, (v / ma + 1f) * 0.5f, face);
+        }
+
+        /// <summary>
+        /// Main generation loop. Parses the database and routes drawing to the selected projection.
+        /// </summary>
         private void GenerateMap()
         {
-            Texture2D tex = null;
+            if (_csvFile == null) return;
 
+            Texture2D tex = null;
             try
             {
-                int width = _resolutionWidth;
-                int height = width / 2;
+                int width, height, faceRes = 0;
+
+                if (_useCubemap)
+                {
+                    faceRes = _resolutionWidth / 4;
+                    width = faceRes * 4;
+                    height = faceRes * 3;
+                }
+                else
+                {
+                    width = _resolutionWidth;
+                    height = width / 2;
+                }
 
                 tex = new Texture2D(width, height, TextureFormat.RGBAFloat, false);
                 Color[] pixels = new Color[width * height];
@@ -137,75 +236,69 @@ namespace BlackHorizon.HorizonWeatherTime
 
                 InitGalacticBasis();
 
-                string[] lines = _csvFile.text.Split(new[] { '\r', '\n' },
-                    System.StringSplitOptions.RemoveEmptyEntries);
-                int count = 0;
-
-                _catalogStars = new List<CatalogStar>(120000);
+                string[] lines = _csvFile.text.Split(new[] { '\r', '\n' }, System.StringSplitOptions.RemoveEmptyEntries);
+                _catalogStars = new List<CatalogStar>(lines.Length);
 
                 EditorUtility.DisplayProgressBar("Generating Stars", "Parsing HYG Database...", 0f);
 
+                float hdrMult = _saveAsEXR ? 10.0f : 1.0f;
+
                 for (int i = 1; i < lines.Length; i++)
                 {
-                    if (i % 5000 == 0)
-                        EditorUtility.DisplayProgressBar("Generating Stars",
-                            $"Processing star {i}/{lines.Length}...", (float)i / lines.Length);
-
-                    string line = lines[i];
-                    string[] cols = line.Split(',');
+                    string[] cols = lines[i].Split(',');
                     if (cols.Length < 17) continue;
 
                     if (!float.TryParse(cols[13], NumberStyles.Any, CultureInfo.InvariantCulture, out float mag)) continue;
-
                     if (!float.TryParse(cols[7], NumberStyles.Any, CultureInfo.InvariantCulture, out float ra)) continue;
                     if (!float.TryParse(cols[8], NumberStyles.Any, CultureInfo.InvariantCulture, out float dec)) continue;
-
-                    if (mag <= 7.0f)
-                    {
-                        _catalogStars.Add(new CatalogStar { ra = ra, dec = dec, mag = mag });
-                    }
-
-                    if (mag > _magThreshold) continue;
 
                     float ci = 0.0f;
                     if (!string.IsNullOrEmpty(cols[16]))
                         float.TryParse(cols[16], NumberStyles.Any, CultureInfo.InvariantCulture, out ci);
 
-                    float u, v, poleComp;
-                    RaDecToUV(ra, dec, out u, out v, out poleComp);
+                    if (mag <= 7.0f)
+                        _catalogStars.Add(new CatalogStar { ra = ra, dec = dec, mag = mag, ci = ci });
 
-                    int x = Mathf.FloorToInt(u * (width - 1));
-                    int y = Mathf.FloorToInt(v * (height - 1));
+                    if (mag > _magThreshold) continue;
 
-                    Color starColor = BVToRGB(ci);
-
-                    float visualIntensity = Mathf.Pow(
-                        Mathf.Max(0, (_magThreshold - mag) / _magThreshold), _brightnessExp);
+                    float visualIntensity = Mathf.Pow(Mathf.Max(0, (_magThreshold - mag) / _magThreshold), _brightnessExp);
                     float radius = Mathf.Lerp(0.8f, _starSize, visualIntensity);
-                    float hdrMult = _saveAsEXR ? 10.0f : 1.0f;
+                    Color starColor = BVToRGB(ci) * visualIntensity * hdrMult;
 
-                    DrawStar(pixels, width, height, x, y, radius, starColor, visualIntensity * hdrMult, dec);
-                    count++;
+                    if (_useCubemap)
+                    {
+                        Vector3 dir = CelestialDirToUnityDir(ra, dec);
+                        DrawPointCubemap(pixels, width, height, faceRes, dir, radius, starColor);
+                    }
+                    else
+                    {
+                        RaDecToUV(ra, dec, out float u, out float v, out float poleComp);
+                        DrawStar(pixels, width, height, Mathf.FloorToInt(u * (width - 1)), Mathf.FloorToInt(v * (height - 1)), radius, starColor, 1.0f, dec);
+                    }
+
+                    if (i % 10000 == 0)
+                        EditorUtility.DisplayProgressBar("Generating Stars", $"Processing {i}/{lines.Length}...", (float)i / lines.Length);
                 }
 
-                // --- Constellation Lines ---
                 if (_drawConstellations)
                 {
-                    EditorUtility.DisplayProgressBar("Generating Stars", "Validating & Drawing Constellations...", 0.85f);
-                    DrawAllConstellations(pixels, width, height);
-                }
-
-                if (_drawDebugGuides)
-                {
-                    EditorUtility.DisplayProgressBar("Generating Stars", "Drawing Debug Guides...", 0.95f);
-                    DrawDebugOverlay(pixels, width, height);
+                    EditorUtility.DisplayProgressBar("Generating Stars", "Drawing Constellations...", 0.9f);
+                    Color lineCol = _constellationLineColor * _constellationLineIntensity * hdrMult;
+                    foreach (var constellation in GetAllConstellationDefs())
+                    {
+                        foreach (var seg in constellation.segments)
+                        {
+                            if (_useCubemap)
+                                DrawLineCubemap(pixels, width, height, faceRes, seg.a, seg.b, lineCol);
+                            else
+                                DrawConstellationLine(pixels, width, height, seg.a, seg.b, lineCol);
+                        }
+                    }
                 }
 
                 tex.SetPixels(pixels);
                 tex.Apply();
-
                 SaveTexture(tex);
-                Debug.Log($"<b><color=#33FF33>[StarMap]</color></b> Generated {count} stars in {_projection} mode.");
             }
             finally
             {
@@ -216,22 +309,65 @@ namespace BlackHorizon.HorizonWeatherTime
         }
 
         /// <summary>
-        /// Converts RA/Dec to equirectangular texture UV.
-        /// Outputs pole compensation factor (1/cos(dec)) for horizontal stretch near poles.
+        /// Draws a single Gaussian point (Star) onto the Cubemap grid.
         /// </summary>
+        private void DrawPointCubemap(Color[] pixels, int texW, int texH, int faceRes, Vector3 dir, float radius, Color color)
+        {
+            Vector3 faceUV = GetCubeFaceUV(dir);
+            Vector2Int gridPos = FaceToGrid[(int)faceUV.z];
+
+            float pxCenter = gridPos.x * faceRes + faceUV.x * (faceRes - 1);
+            float pyCenter = gridPos.y * faceRes + faceUV.y * (faceRes - 1);
+
+            int r = Mathf.CeilToInt(radius + 1);
+            float rSqBase = radius * radius;
+
+            for (int dy = -r; dy <= r; dy++)
+            {
+                for (int dx = -r; dx <= r; dx++)
+                {
+                    int x = Mathf.RoundToInt(pxCenter + dx);
+                    int y = Mathf.RoundToInt(pyCenter + dy);
+
+                    if (x < 0 || x >= texW || y < 0 || y >= texH) continue;
+
+                    float distSq = dx * dx + dy * dy;
+                    if (distSq <= rSqBase * 4.0f)
+                    {
+                        float alpha = Mathf.Exp(-distSq / (rSqBase * 0.5f + 0.0001f));
+                        pixels[y * texW + x] += color * alpha;
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// Draws constellation lines between two celestial points on the Cubemap using Slerp.
+        /// </summary>
+        private void DrawLineCubemap(Color[] pixels, int texW, int texH, int faceRes, CelestialPoint a, CelestialPoint b, Color color)
+        {
+            Vector3 dirA = CelestialDirToUnityDir(a);
+            Vector3 dirB = CelestialDirToUnityDir(b);
+
+            float angle = Mathf.Acos(Mathf.Clamp(Vector3.Dot(dirA, dirB), -1f, 1f));
+
+            int steps = Mathf.CeilToInt(angle * Mathf.Rad2Deg * 10.0f);
+
+            steps = Mathf.Max(1, steps);
+
+            for (int i = 0; i <= steps; i++)
+            {
+                float t = (float)i / steps;
+                Vector3 dir = Vector3.Slerp(dirA, dirB, t);
+
+                DrawPointCubemap(pixels, texW, texH, faceRes, dir, _constellationLineWidth * 0.5f, color);
+            }
+        }
+
         private void RaDecToUV(float raHours, float decDeg, out float u, out float v, out float poleCompensation)
         {
-            if (_projection == ProjectionMode.Equatorial)
-            {
-                u = raHours / 24.0f;
-                v = 1.0f - (decDeg + 90.0f) / 180.0f;
-            }
-            else
-            {
-                Vector2 gal = EquatorialToGalactic(raHours, decDeg);
-                u = gal.x / 360.0f;
-                v = 1.0f - (gal.y + 90.0f) / 180.0f;
-            }
+            u = raHours / 24.0f;
+            v = 1.0f - (decDeg + 90.0f) / 180.0f;
 
             u = (u + _horizontalShift) % 1.0f;
             if (u < 0) u += 1.0f;

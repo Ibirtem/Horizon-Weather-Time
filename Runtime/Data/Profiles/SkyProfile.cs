@@ -28,10 +28,10 @@ namespace BlackHorizon.HorizonWeatherTime
 
         [Header("Deep Space")]
         [Tooltip("Main Star Map (Stars only). Celestial/Equatorial Coordinates (EXR preferred).")]
-        public Texture starsTexture;
+        public Cubemap starsCubemap;
 
         [Tooltip("Milky Way / Galactic Dust only. Additive blend.")]
-        public Texture milkyWayTexture;
+        public Cubemap milkyWayCubemap;
 
         [Header("Space Alignment & Intensity")]
         [Tooltip("Static tilt of the celestial sphere (X=Tilt, Y=Initial, Z=Roll).")]

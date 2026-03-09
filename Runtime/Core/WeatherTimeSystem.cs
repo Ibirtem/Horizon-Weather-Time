@@ -121,8 +121,8 @@ namespace BlackHorizon.HorizonWeatherTime
         [SerializeField] private float[] _bake_mieG;
         [SerializeField] private float[] _bake_exposure;
 
-        [SerializeField] private Texture[] _bake_starsTex;
-        [SerializeField] private Texture[] _bake_milkyWayTex;
+        [SerializeField] private Cubemap[] _bake_starsCube;
+        [SerializeField] private Cubemap[] _bake_milkyWayCube;
         [SerializeField] private Vector3[] _bake_starAlignment;
         [SerializeField] private float[] _bake_starSpeed;
         [SerializeField] private float[] _bake_starsIntensity;
@@ -254,8 +254,8 @@ namespace BlackHorizon.HorizonWeatherTime
             _bake_exposure = new float[count];
 
             // --- STARS & DEEP SPACE ---
-            _bake_starsTex = new Texture[count];
-            _bake_milkyWayTex = new Texture[count];
+            _bake_starsCube = new Cubemap[count];
+            _bake_milkyWayCube = new Cubemap[count];
             _bake_starAlignment = new Vector3[count];
             _bake_starSpeed = new float[count];
             _bake_starsIntensity = new float[count];
@@ -329,8 +329,8 @@ namespace BlackHorizon.HorizonWeatherTime
                 _bake_mieG[i] = sky != null ? sky.mieDirectionalG : 0.8f;
                 _bake_exposure[i] = sky != null ? sky.exposure : 0.3f;
 
-                _bake_starsTex[i] = sky != null ? sky.starsTexture : null;
-                _bake_milkyWayTex[i] = sky != null ? sky.milkyWayTexture : null;
+                _bake_starsCube[i] = sky != null ? sky.starsCubemap : null;
+                _bake_milkyWayCube[i] = sky != null ? sky.milkyWayCubemap : null;
                 _bake_starAlignment[i] = sky != null ? sky.starfieldAlignment : Vector3.zero;
                 _bake_starSpeed[i] = sky != null ? sky.starsRotationSpeed : 0.5f;
                 _bake_starsIntensity[i] = sky != null ? sky.starsIntensity : 1.0f;
@@ -867,8 +867,8 @@ namespace BlackHorizon.HorizonWeatherTime
                     _bake_mieCoeff[_skyIndex], _bake_mieG[_skyIndex], _bake_exposure[_skyIndex]
                 );
 
-                Texture safeStars = (_bake_starsTex != null && _skyIndex < _bake_starsTex.Length) ? _bake_starsTex[_skyIndex] : null;
-                Texture safeMW = (_bake_milkyWayTex != null && _skyIndex < _bake_milkyWayTex.Length) ? _bake_milkyWayTex[_skyIndex] : null;
+                Cubemap safeStars = (_bake_starsCube != null && _skyIndex < _bake_starsCube.Length) ? _bake_starsCube[_skyIndex] : null;
+                Cubemap safeMW = (_bake_milkyWayCube != null && _skyIndex < _bake_milkyWayCube.Length) ? _bake_milkyWayCube[_skyIndex] : null;
 
                 Vector3 baseAlign = _bake_starAlignment[_skyIndex];
 
@@ -879,11 +879,7 @@ namespace BlackHorizon.HorizonWeatherTime
 
                 float latTilt = 90f - latitude;
 
-                Vector3 starfieldEuler = new Vector3(
-                    -latTilt + baseAlign.x,
-                    siderealAngle + baseAlign.y,
-                    baseAlign.z
-                );
+                Vector3 starfieldEuler = new Vector3(-latTilt + baseAlign.x, siderealAngle + baseAlign.y, baseAlign.z);
 
                 _skyManager.UpdateStars(starfieldEuler, sun.transform.forward,
                     safeStars, safeMW,

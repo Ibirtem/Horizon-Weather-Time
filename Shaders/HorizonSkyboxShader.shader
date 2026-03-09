@@ -3,8 +3,8 @@ Shader "Horizon/Procedural Skybox"
     Properties
     {
         [Header(Deep Space)]
-        [NoScaleOffset] _StarsTex ("Stars Map (EXR)", 2D) = "black" {}
-        [NoScaleOffset] _MilkyWayTex ("Milky Way Map (EXR)", 2D) = "black" {}
+        [NoScaleOffset] _StarsCube ("Stars Cubemap", Cube) = "black" {}
+        [NoScaleOffset] _MilkyWayCube ("Milky Way Cubemap", Cube) = "black" {}
         
         [HideInInspector] _StarfieldRotation ("Rotation (Euler)", Vector) = (0,0,0,0)
         [HideInInspector] _StarsIntensity ("Stars Intensity", Float) = 0.01
@@ -77,8 +77,8 @@ Shader "Horizon/Procedural Skybox"
             // =====================================================================
 
             // Deep Space
-            sampler2D _StarsTex;
-            sampler2D _MilkyWayTex;
+            samplerCUBE _StarsCube;
+            samplerCUBE _MilkyWayCube;
             float3    _StarfieldRotation;
             float     _StarsIntensity;
             float     _MilkyWayIntensity;
@@ -559,12 +559,9 @@ Shader "Horizon/Procedural Skybox"
 
                 // =============================================================
                 //  2. DEEP SPACE (Stars + Milky Way)
-                //  Stars are occluded by atmospheric brightness and fade
-                //  at the horizon due to longer optical path (reddening).
-                //  Milky Way does NOT twinkle.
                 // =============================================================
 
-                float skyLuminance  = dot(finalColor, float3(0.2126, 0.7152, 0.0722));
+                float skyLuminance = dot(finalColor, float3(0.2126, 0.7152, 0.0722));
                 float starVisibility = _StarsFade * saturate(1.0 - skyLuminance * 50.0);
                 starVisibility *= smoothstep(-0.02, 0.15, direction.y);
 
@@ -572,13 +569,9 @@ Shader "Horizon/Procedural Skybox"
                 {
                     float3 spaceDir = RotateSphere(direction, _StarfieldRotation);
 
-                    float2 starUV = float2(
-                        0.5 - atan2(spaceDir.x, -spaceDir.z) / (2.0 * PI),
-                        0.5 + asin(clamp(spaceDir.y, -1.0, 1.0)) / PI
-                    );
-
-                    float3 starCol = tex2D(_StarsTex,    starUV).rgb * _StarsIntensity;
-                    float3 mwRaw   = tex2D(_MilkyWayTex, starUV).rgb;
+                    float3 starCol = texCUBE(_StarsCube, spaceDir).rgb * _StarsIntensity;
+                    float3 mwRaw   = texCUBE(_MilkyWayCube, spaceDir).rgb;
+                    
                     float mwLum = dot(mwRaw, float3(0.2126, 0.7152, 0.0722));
                     float3 mwCol = lerp(mwRaw, float3(mwLum, mwLum, mwLum), 0.4) * _MilkyWayIntensity;
 
@@ -603,7 +596,6 @@ Shader "Horizon/Procedural Skybox"
                 //  3. MOON
                 //  Dynamic phase from Sun-Moon geometry.
                 //  Atmospheric extinction reddens the moon near horizon.
-                //  Faint earthshine on the unlit side.
                 // =============================================================
 
                 float3 moonDir = normalize(_MoonPosition);

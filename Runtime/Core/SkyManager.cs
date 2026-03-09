@@ -241,19 +241,15 @@ namespace BlackHorizon.HorizonWeatherTime
         /// and fades them based on the physical sun altitude to simulate daylight scattering.
         /// </summary>
         public void UpdateStars(Vector3 starfieldRotation, Vector3 sunDirection,
-            Texture starsTex, Texture mwTex,
+            Cubemap starsCube, Cubemap mwCube,
             float starsInt, float mwInt,
             float twinkleScale, float twinkleSpeed, float twinkleStrength)
         {
             EnsureInitialized();
             if (_skyboxInstance == null) return;
 
-            if (_currentStarsTexture != starsTex)
-            {
-                _skyboxInstance.SetTexture(StarsTexID, starsTex);
-                _currentStarsTexture = starsTex;
-            }
-            if (mwTex != null) _skyboxInstance.SetTexture(MilkyWayTexID, mwTex);
+            if (starsCube != null) _skyboxInstance.SetTexture("_StarsCube", starsCube);
+            if (mwCube != null) _skyboxInstance.SetTexture("_MilkyWayCube", mwCube);
 
             _skyboxInstance.SetVector(StarfieldRotationID, starfieldRotation);
 

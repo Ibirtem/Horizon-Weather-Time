@@ -587,46 +587,69 @@ namespace BlackHorizon.HorizonWeatherTime
         /// </summary>
         private void CheckAndAssignDeepSpaceAssets(WeatherProfile p)
         {
-            if (p.skyProfile == null) return;
+            if (p.skyProfile == null)
+            {
+                return;
+            }
 
             bool isDirty = false;
-            string starsFolder = "Assets/Horizon Weather & Time/Runtime/Textures/Sky";
-            if (p.skyProfile.starsTexture == null)
+            string starsFolder = "Assets/Horizon Weather & Time/Textures/Sky";
+
+            // 1. Search for Star Map Cubemap
+            if (p.skyProfile.starsCubemap == null)
             {
-                string[] guids = AssetDatabase.FindAssets("stars t:Texture2D", new[] { starsFolder });
+                string[] guids = AssetDatabase.FindAssets("stars t:Cubemap", new[] { starsFolder });
+
                 foreach (var guid in guids)
                 {
                     string path = AssetDatabase.GUIDToAssetPath(guid);
-                    Texture tex = AssetDatabase.LoadAssetAtPath<Texture>(path);
-                    if (tex != null && tex is Texture2D && !(tex is Cubemap))
+                    Cubemap cube = AssetDatabase.LoadAssetAtPath<Cubemap>(path);
+
+                    if (cube != null)
                     {
-                        p.skyProfile.starsTexture = tex;
+                        p.skyProfile.starsCubemap = cube;
                         isDirty = true;
                         break;
                     }
                 }
             }
 
-            if (p.skyProfile.milkyWayTexture == null)
+            // 2. Search for Milky Way Cubemap
+            if (p.skyProfile.milkyWayCubemap == null)
             {
-                string[] guids = AssetDatabase.FindAssets("milkyway t:Texture2D", new[] { starsFolder });
+                string[] guids = AssetDatabase.FindAssets("milkyway t:Cubemap", new[] { starsFolder });
+
                 foreach (var guid in guids)
                 {
                     string path = AssetDatabase.GUIDToAssetPath(guid);
-                    Texture tex = AssetDatabase.LoadAssetAtPath<Texture>(path);
-                    if (tex != null && tex is Texture2D && !(tex is Cubemap))
+                    Cubemap cube = AssetDatabase.LoadAssetAtPath<Cubemap>(path);
+
+                    if (cube != null)
                     {
-                        p.skyProfile.milkyWayTexture = tex;
+                        p.skyProfile.milkyWayCubemap = cube;
                         isDirty = true;
                         break;
                     }
                 }
             }
 
-            if (p.skyProfile.starsIntensity <= 0.01f) { p.skyProfile.starsIntensity = 1.0f; isDirty = true; }
-            if (p.skyProfile.starsIntensity <= 0f) { p.skyProfile.starsIntensity = 1.0f; isDirty = true; }
-            if (p.skyProfile.milkyWayIntensity <= 0f) { p.skyProfile.milkyWayIntensity = 1.0f; isDirty = true; }
-            if (isDirty) EditorUtility.SetDirty(p.skyProfile);
+            // Restore default intensities if they are unset
+            if (p.skyProfile.starsIntensity <= 0.001f)
+            {
+                p.skyProfile.starsIntensity = 1.0f;
+                isDirty = true;
+            }
+
+            if (p.skyProfile.milkyWayIntensity <= 0.001f)
+            {
+                p.skyProfile.milkyWayIntensity = 1.0f;
+                isDirty = true;
+            }
+
+            if (isDirty)
+            {
+                EditorUtility.SetDirty(p.skyProfile);
+            }
         }
 
         // --- ASSET HELPERS ---
@@ -686,11 +709,30 @@ namespace BlackHorizon.HorizonWeatherTime
             }
         }
 
+        /// <summary>
+        /// Final attempt to assign the generated Star Map cubemap asset by its specific default filename.
+        /// </summary>
+        /// <param name="p">The WeatherProfile to initialize.</param>
         private void CheckAndAssignDefaultStarsTexture(WeatherProfile p)
         {
-            if (p.skyProfile.starsTexture != null) return;
-            string[] guids = AssetDatabase.FindAssets("starmap_horizon_8k t:Texture");
-            if (guids.Length > 0) { p.skyProfile.starsTexture = AssetDatabase.LoadAssetAtPath<Texture>(AssetDatabase.GUIDToAssetPath(guids[0])); EditorUtility.SetDirty(p.skyProfile); }
+            if (p.skyProfile == null || p.skyProfile.starsCubemap != null)
+            {
+                return;
+            }
+
+            string[] guids = AssetDatabase.FindAssets("Horizon_StarMap_Gen t:Cubemap");
+
+            if (guids.Length > 0)
+            {
+                string path = AssetDatabase.GUIDToAssetPath(guids[0]);
+                Cubemap cube = AssetDatabase.LoadAssetAtPath<Cubemap>(path);
+
+                if (cube != null)
+                {
+                    p.skyProfile.starsCubemap = cube;
+                    EditorUtility.SetDirty(p.skyProfile);
+                }
+            }
         }
 
         private void CheckAndAssignDefaultMoonTexture(WeatherProfile p)
