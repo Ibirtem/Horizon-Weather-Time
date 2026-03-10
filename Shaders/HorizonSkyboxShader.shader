@@ -740,15 +740,17 @@ Shader "Horizon/Procedural Skybox"
                                 float dens = SampleCloudDensity(pos + cloudPlanetCenter, heightInfo);
                                 if (dens < 0.001) continue;
 
-                                // ---- Light march: 6 steps toward sun ----
+                                // ---- Light march ----
                                 float lightOpticalDepth = 0.0;
+                                float totalLightDens = 0.0;
+
+                                #define LIGHT_DENOM 21.0
 
                                 [unroll]
-                                for (int k = 0; k < 6; k++)
+                                for (int k = 0; k < 4; k++)
                                 {
-                                    // Step distances: ~25, ~75, ~150, ~250, ~375, ~525m (total ≈ CLOUD_THICKNESS)
-                                    float t0 = CLOUD_THICKNESS * (float(k) * float(k)) / 36.0;
-                                    float t1 = CLOUD_THICKNESS * (float(k + 1) * float(k + 1)) / 36.0;
+                                    float t0 = CLOUD_THICKNESS * (float(k) * float(k)) / LIGHT_DENOM;
+                                    float t1 = CLOUD_THICKNESS * (float(k + 1) * float(k + 1)) / LIGHT_DENOM;
                                     float lightStepSize = t1 - t0;
                                     float lightDist = (t0 + t1) * 0.5;
 
@@ -758,8 +760,14 @@ Shader "Horizon/Procedural Skybox"
                                     float lightMask = step(0.0, lightH) * step(lightH, 1.0);
                                     float lightDens = SampleCloudDensity(lightSamplePos + cloudPlanetCenter, lightH) * lightMask;
 
+                                    totalLightDens += lightDens;
                                     lightOpticalDepth += lightDens * lightStepSize * absorptionCoeff;
                                 }
+
+                                // ---- Analytical tail ----
+                                float avgLightDens = totalLightDens * 0.25;
+                                float remainingThickness = CLOUD_THICKNESS * (5.0 / LIGHT_DENOM);
+                                lightOpticalDepth += avgLightDens * remainingThickness * 0.4 * absorptionCoeff;
 
                                 // ---- Beer-Lambert ----
                                 float beerTerm = exp(-lightOpticalDepth);
