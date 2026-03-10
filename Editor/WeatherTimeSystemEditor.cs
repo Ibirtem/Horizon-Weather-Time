@@ -658,15 +658,12 @@ namespace BlackHorizon.HorizonWeatherTime
         {
             string cloudPath = CloudNoiseGenerator.DEFAULT_NOISE_PATH;
             string weatherMapPath = WeatherOptimizationGen.DEFAULT_WEATHER_MAP_PATH;
-            string blueNoisePath = WeatherOptimizationGen.DEFAULT_BLUE_NOISE_PATH;
 
             Texture2D cloudTex = AssetDatabase.LoadAssetAtPath<Texture2D>(cloudPath);
             Texture2D weatherMapTex = AssetDatabase.LoadAssetAtPath<Texture2D>(weatherMapPath);
-            Texture2D blueNoiseTex = AssetDatabase.LoadAssetAtPath<Texture2D>(blueNoisePath);
 
             if (cloudTex == null) cloudTex = CloudNoiseGenerator.GenerateAndSaveTexture(512, 4, cloudPath);
             if (weatherMapTex == null) weatherMapTex = WeatherOptimizationGen.GenerateWeatherMap(weatherMapPath);
-            if (blueNoiseTex == null) blueNoiseTex = WeatherOptimizationGen.GenerateBlueNoise(blueNoisePath);
 
             foreach (var p in profiles)
             {
@@ -676,7 +673,6 @@ namespace BlackHorizon.HorizonWeatherTime
 
                     if (p.cloudProfile.cloudNoiseTexture == null) { p.cloudProfile.cloudNoiseTexture = cloudTex; isDirty = true; }
                     if (p.cloudProfile.weatherMapTexture == null) { p.cloudProfile.weatherMapTexture = weatherMapTex; isDirty = true; }
-                    if (p.cloudProfile.blueNoiseTexture == null) { p.cloudProfile.blueNoiseTexture = blueNoiseTex; isDirty = true; }
 
                     if (isDirty) EditorUtility.SetDirty(p.cloudProfile);
                 }

@@ -26,7 +26,6 @@ Shader "Horizon/Procedural Skybox"
 
         [Header(Volumetric Clouds)]
         [NoScaleOffset] _WeatherMapTex ("Weather Map (RGBA)", 2D) = "black" {}
-        [NoScaleOffset] _BlueNoiseTex ("Blue Noise (Dither)", 2D) = "gray" {}
         [NoScaleOffset] _CloudTex ("Cloud Noise (RGBA)", 2D) = "black" {}
         
         _CloudColor ("Cloud Lit Color", Color) = (0.9, 0.9, 0.9, 1)
@@ -99,7 +98,6 @@ Shader "Horizon/Procedural Skybox"
 
             // Volumetric Clouds
             sampler2D _WeatherMapTex;
-            sampler2D _BlueNoiseTex;
             sampler2D _CloudTex;
             float4    _CloudColor;
             float4    _CloudShadowColor;
@@ -206,6 +204,14 @@ Shader "Horizon/Procedural Skybox"
                     freq *= 2.0;
                 }
                 return value;
+            }
+
+            // =====================================================================
+            //  UTILITY: Interleaved Gradient Noise (IGN)
+            // =====================================================================
+            float IGN(float2 screenPos)
+            {
+                return frac(52.9829189 * frac(dot(screenPos, float2(0.06711056, 0.00583715))));
             }
 
             // =====================================================================
@@ -693,8 +699,7 @@ Shader "Horizon/Procedural Skybox"
                             float stepSize  = rayLength / float(CLOUD_STEPS);
                             float3 startPos = camOrigin + direction * distToStart;
 
-                            float2 ditherUV = fmod(i.vertex.xy, 64.0) / 64.0;
-                            float dither = tex2Dlod(_BlueNoiseTex, float4(ditherUV, 0, 0)).r;
+                            float dither = IGN(i.vertex.xy + float2(0, fmod(_Time.y, 8.0) * 7.0));
                             startPos += direction * stepSize * dither;
 
                             // --- Light source blending (sun ↔ moon) ---

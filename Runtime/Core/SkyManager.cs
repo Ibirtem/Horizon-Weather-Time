@@ -119,7 +119,6 @@ namespace BlackHorizon.HorizonWeatherTime
             CloudScatterID = VRCShader.PropertyToID("_CloudScatter");
 
             WeatherMapTexID = VRCShader.PropertyToID("_WeatherMapTex");
-            BlueNoiseTexID = VRCShader.PropertyToID("_BlueNoiseTex");
 
             FogColorID = VRCShader.PropertyToID("_HorizonFogColor");
             FogBlendID = VRCShader.PropertyToID("_HorizonFogBlend");
@@ -269,7 +268,7 @@ namespace BlackHorizon.HorizonWeatherTime
             _skyboxInstance.SetFloat(TwinkleStrengthID, twinkleStrength);
         }
 
-        public void UpdateClouds(Texture cloudTex, Texture weatherMapTex, Texture blueNoiseTex, float altitude, float scale, float coverage, float density, float detail, float wisp, Vector2 windSpeed, Color baseColor, Color shadowColor, float scatter)
+        public void UpdateClouds(Texture cloudTex, Texture weatherMapTex, float altitude, float scale, float coverage, float density, float detail, float wisp, Vector2 windSpeed, Color baseColor, Color shadowColor, float scatter)
         {
             EnsureInitialized();
             if (_skyboxInstance == null) return;
@@ -281,7 +280,6 @@ namespace BlackHorizon.HorizonWeatherTime
             }
 
             if (weatherMapTex != null) _skyboxInstance.SetTexture(WeatherMapTexID, weatherMapTex);
-            if (blueNoiseTex != null) _skyboxInstance.SetTexture(BlueNoiseTexID, blueNoiseTex);
 
 #if !COMPILER_UDONSHARP && UNITY_EDITOR
             if (Application.isPlaying) { _currentCloudOffset += windSpeed * Time.deltaTime; }
