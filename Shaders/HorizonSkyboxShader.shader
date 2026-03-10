@@ -766,7 +766,8 @@ Shader "Horizon/Procedural Skybox"
 
                                 // ---- Beer-Powder ----
                                 float powderTerm = 1.0 - exp(-lightOpticalDepth * 2.0);
-                                float beerPowder = beerTerm * lerp(1.0, powderTerm * 2.0, 0.5);
+                                float powderWeight = lerp(0.8, 0.2, saturate(cloudCosTheta * 0.5 + 0.5));
+                                float beerPowder = beerTerm * lerp(1.0, powderTerm * 2.0, powderWeight);
 
                                 // ---- Ambient contribution from height ----
                                 float heightGradient = lerp(0.3, 1.0, heightInfo);
