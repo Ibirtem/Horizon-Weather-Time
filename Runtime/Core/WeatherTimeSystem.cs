@@ -143,7 +143,9 @@ namespace BlackHorizon.HorizonWeatherTime
         [SerializeField] private float[] _bake_moonSize;
         [SerializeField] private Color[] _bake_moonTint;
 
-        [SerializeField] private Texture[] _bake_cloudTex;
+        [SerializeField] private Texture3D[] _bake_cloudTex;
+        [SerializeField] private Texture[] _bake_blueNoiseTex;
+        [SerializeField] private Texture[] _bake_weatherMapTex;
         [SerializeField] private float[] _bake_cloudAltitude;
         [SerializeField] private float[] _bake_cloudScale;
         [SerializeField] private float[] _bake_cloudCoverage;
@@ -154,7 +156,6 @@ namespace BlackHorizon.HorizonWeatherTime
         [SerializeField] private Color[] _bake_cloudColor;
         [SerializeField] private Color[] _bake_cloudShadow;
         [SerializeField] private float[] _bake_cloudScatter;
-        [SerializeField] private Texture[] _bake_weatherMapTex;
 
         [SerializeField] private bool[] _bake_fogEnabled;
         [SerializeField] private int[] _bake_fogMode;
@@ -276,8 +277,9 @@ namespace BlackHorizon.HorizonWeatherTime
             _bake_moonSize = new float[count];
             _bake_moonTint = new Color[count];
 
-            _bake_cloudTex = new Texture[count];
+            _bake_cloudTex = new Texture3D[count];
             _bake_weatherMapTex = new Texture[count];
+            _bake_blueNoiseTex = new Texture[count];
             _bake_cloudAltitude = new float[count];
             _bake_cloudScale = new float[count];
             _bake_cloudCoverage = new float[count];
@@ -357,6 +359,7 @@ namespace BlackHorizon.HorizonWeatherTime
                 var clouds = p.cloudProfile;
                 _bake_cloudTex[i] = clouds != null ? clouds.cloudNoiseTexture : null;
                 _bake_weatherMapTex[i] = clouds != null ? clouds.weatherMapTexture : null;
+                _bake_blueNoiseTex[i] = clouds != null ? clouds.blueNoiseTexture : null;
                 
                 _bake_cloudAltitude[i] = clouds != null ? clouds.altitude : 4.0f;
                 _bake_cloudScale[i] = clouds != null ? clouds.scale : 3.5f;
@@ -889,10 +892,11 @@ namespace BlackHorizon.HorizonWeatherTime
 
                 if (_bake_cloudAltitude != null && _cloudIndex < _bake_cloudAltitude.Length)
                 {
-                    Texture safeCloudTex = (_bake_cloudTex != null && _cloudIndex < _bake_cloudTex.Length) ? _bake_cloudTex[_cloudIndex] : null;
+                    Texture3D safeCloudTex = (_bake_cloudTex != null && _cloudIndex < _bake_cloudTex.Length) ? _bake_cloudTex[_cloudIndex] : null;
                     Texture safeWeatherMap = (_bake_weatherMapTex != null && _cloudIndex < _bake_weatherMapTex.Length) ? _bake_weatherMapTex[_cloudIndex] : null;
+                    Texture safeBlueNoise = (_bake_blueNoiseTex != null && _cloudIndex < _bake_blueNoiseTex.Length) ? _bake_blueNoiseTex[_cloudIndex] : null;
 
-                    _skyManager.UpdateClouds(safeCloudTex, safeWeatherMap,
+                    _skyManager.UpdateClouds(safeCloudTex, safeWeatherMap, safeBlueNoise,
                         _bake_cloudAltitude[_cloudIndex], _bake_cloudScale[_cloudIndex], _bake_cloudCoverage[_cloudIndex],
                         _bake_cloudDensity[_cloudIndex], _bake_cloudDetail[_cloudIndex], _bake_cloudWisp[_cloudIndex],
                         _bake_cloudWind[_cloudIndex], _bake_cloudColor[_cloudIndex], _bake_cloudShadow[_cloudIndex],

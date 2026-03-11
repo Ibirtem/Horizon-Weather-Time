@@ -30,7 +30,7 @@ namespace BlackHorizon.HorizonWeatherTime
         private Material _originalSkybox;
         private Texture _currentStarsTexture;
         private Texture _currentMoonTexture;
-        private Texture _currentCloudTexture;
+        private Texture3D _currentCloudTexture;
         private Vector2 _currentCloudOffset;
 
         private bool _areIDsInitialized = false;
@@ -66,7 +66,7 @@ namespace BlackHorizon.HorizonWeatherTime
         private int MoonPositionID;
 
         // Clouds
-        private int CloudTexID, CloudScaleID, CloudCoverageID, CloudWindID, CloudColorID, CloudShadowColorID;
+        private int CloudNoise3DID, CloudScaleID, CloudCoverageID, CloudWindID, CloudColorID, CloudShadowColorID;
         private int CloudAltitudeID, CloudDensityID, CloudDetailID, CloudWispID, CloudScatterID;
 
         private int WeatherMapTexID, BlueNoiseTexID;
@@ -106,7 +106,7 @@ namespace BlackHorizon.HorizonWeatherTime
             MoonPositionID = VRCShader.PropertyToID("_MoonPosition");
 
             // Clouds
-            CloudTexID = VRCShader.PropertyToID("_CloudTex");
+            CloudNoise3DID = VRCShader.PropertyToID("_CloudNoise3D");
             CloudScaleID = VRCShader.PropertyToID("_CloudScale");
             CloudCoverageID = VRCShader.PropertyToID("_CloudCoverage");
             CloudWindID = VRCShader.PropertyToID("_CloudWind");
@@ -119,6 +119,7 @@ namespace BlackHorizon.HorizonWeatherTime
             CloudScatterID = VRCShader.PropertyToID("_CloudScatter");
 
             WeatherMapTexID = VRCShader.PropertyToID("_WeatherMapTex");
+            BlueNoiseTexID = VRCShader.PropertyToID("_BlueNoiseTex");
 
             FogColorID = VRCShader.PropertyToID("_HorizonFogColor");
             FogBlendID = VRCShader.PropertyToID("_HorizonFogBlend");
@@ -268,18 +269,19 @@ namespace BlackHorizon.HorizonWeatherTime
             _skyboxInstance.SetFloat(TwinkleStrengthID, twinkleStrength);
         }
 
-        public void UpdateClouds(Texture cloudTex, Texture weatherMapTex, float altitude, float scale, float coverage, float density, float detail, float wisp, Vector2 windSpeed, Color baseColor, Color shadowColor, float scatter)
+        public void UpdateClouds(Texture3D cloudTex, Texture weatherMapTex, Texture blueNoiseTex, float altitude, float scale, float coverage, float density, float detail, float wisp, Vector2 windSpeed, Color baseColor, Color shadowColor, float scatter)
         {
             EnsureInitialized();
             if (_skyboxInstance == null) return;
 
             if (_currentCloudTexture != cloudTex)
             {
-                _skyboxInstance.SetTexture(CloudTexID, cloudTex);
+                _skyboxInstance.SetTexture(CloudNoise3DID, cloudTex);
                 _currentCloudTexture = cloudTex;
             }
 
             if (weatherMapTex != null) _skyboxInstance.SetTexture(WeatherMapTexID, weatherMapTex);
+            if (blueNoiseTex != null) _skyboxInstance.SetTexture(BlueNoiseTexID, blueNoiseTex);
 
 #if !COMPILER_UDONSHARP && UNITY_EDITOR
             if (Application.isPlaying) { _currentCloudOffset += windSpeed * Time.deltaTime; }

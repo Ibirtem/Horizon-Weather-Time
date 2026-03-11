@@ -25,8 +25,9 @@ Shader "Horizon/Procedural Skybox"
         [HideInInspector] _MoonPosition ("Moon Direction", Vector) = (0.0, -0.5, 0.0, 0.0)
 
         [Header(Volumetric Clouds)]
+        [NoScaleOffset] _CloudNoise3D ("Cloud Noise 3D (RGBA)", 3D) = "black" {}
+        [NoScaleOffset] _BlueNoiseTex ("Blue Noise (R)", 2D) = "black" {}
         [NoScaleOffset] _WeatherMapTex ("Weather Map (RGBA)", 2D) = "black" {}
-        [NoScaleOffset] _CloudTex ("Cloud Noise (RGBA)", 2D) = "black" {}
         
         _CloudColor ("Cloud Lit Color", Color) = (0.9, 0.9, 0.9, 1)
         _CloudShadowColor ("Cloud Shadow Color", Color) = (0.3, 0.3, 0.35, 1)
@@ -97,8 +98,9 @@ Shader "Horizon/Procedural Skybox"
             float3    _MoonPosition;
 
             // Volumetric Clouds
+            sampler3D _CloudNoise3D;
             sampler2D _WeatherMapTex;
-            sampler2D _CloudTex;
+            sampler2D _BlueNoiseTex;
             float4    _CloudColor;
             float4    _CloudShadowColor;
             float     _CloudAltitude;
@@ -157,8 +159,13 @@ Shader "Horizon/Procedural Skybox"
 
             // --- Cloud Raymarching ---
             #define CLOUD_STEPS         32
+            #define CLOUD_LIGHT_STEPS   4
+            #define LIGHT_DENOM         21.0
             #define CLOUD_PLANET_RADIUS 600000.0
-            #define CLOUD_THICKNESS     1500.0
+            #define CLOUD_THICKNESS     1800.0
+
+            #define CLOUD_NOISE_FREQ   0.00015
+            #define CLOUD_WEATHER_FREQ 0.000038
 
             // =====================================================================
             //  UTILITY: 3D Gradient Noise & FBM
@@ -204,14 +211,6 @@ Shader "Horizon/Procedural Skybox"
                     freq *= 2.0;
                 }
                 return value;
-            }
-
-            // =====================================================================
-            //  UTILITY: Interleaved Gradient Noise (IGN)
-            // =====================================================================
-            float IGN(float2 screenPos)
-            {
-                return frac(52.9829189 * frac(dot(screenPos, float2(0.06711056, 0.00583715))));
             }
 
             // =====================================================================
@@ -465,48 +464,91 @@ Shader "Horizon/Procedural Skybox"
 
             // =====================================================================
             //  CLOUDS: Density Sampling
-            //  Uses 2D weather map (RGBA) + noise texture for shape & erosion.
-            //  Vertical profile blends Stratus / Cumulus / Cumulonimbus by type.
             // =====================================================================
 
-            float SampleCloudDensity(float3 p, float heightFraction)
+            struct CloudWeather {
+                float coverage;
+                float type;
+                float erosion;
+                float density;
+                float macro;
+            };
+
+            float SampleCloudDensity(float3 p, float heightFraction, float lod, CloudWeather weather)
             {
-                float2 weatherUV = p.xz * 0.000005 * _CloudScale + (_CloudWind * 0.1);
-                float4 weather = tex2Dlod(_WeatherMapTex, float4(weatherUV, 0, 0));
-
-                float weatherCoverage = weather.r;
-                float cloudType       = weather.g;
-                float erosionMask     = weather.b;
-                float densityMod      = weather.a;
-
-                float weatherThreshold = 1.0 - _CloudCoverage;
-                float macroCoverage = smoothstep(weatherThreshold - 0.15, weatherThreshold + 0.15, weatherCoverage);
-                if (macroCoverage < 0.01) return 0.0;
+                if (weather.macro < 0.01) return 0.0;
 
                 float h = heightFraction;
+                float t = weather.type * 2.0;
                 float stratusProfile = smoothstep(0.0, 0.1, h) * smoothstep(0.4, 0.2, h);
                 float cumulusProfile = saturate(4.0 * h * (1.0 - h));
                 float cbProfile      = smoothstep(0.0, 0.1, h) * smoothstep(1.0, 0.6, h);
+                float verticalProfile = (t < 1.0) ? lerp(stratusProfile, cumulusProfile, t)
+                                                : lerp(cumulusProfile, cbProfile, t - 1.0);
 
-                float t = cloudType * 2.0;
-                float verticalProfile = (t < 1.0)
-                    ? lerp(stratusProfile, cumulusProfile, t)
-                    : lerp(cumulusProfile, cbProfile, t - 1.0);
+                float3 noiseUVW = float3(
+                    p.x * CLOUD_NOISE_FREQ * _CloudScale + _CloudWind.x,
+                    h * lerp(0.25, 0.8, weather.type),
+                    p.z * CLOUD_NOISE_FREQ * _CloudScale + _CloudWind.y
+                );
 
-                float2 baseUV = p.xz * 0.00002 * _CloudScale + _CloudWind;
-                float2 wobble = float2(cos(h * 4.0), sin(h * 4.0)) * 0.015;
-                float baseShape = tex2Dlod(_CloudTex, float4(baseUV + wobble, 0, 0)).r;
+                float4 noise3D = tex3Dlod(_CloudNoise3D, float4(noiseUVW, lod));
 
-                float2 erosionUV = baseUV + float2(h, h * 0.8) * 0.3;
-                float4 erosionData = tex2Dlod(_CloudTex, float4(erosionUV, 0, 0));
+                // === BASE SHAPE ===
+                float overcastBlend = saturate((weather.macro - 0.6) * 4.0);
+                float pwShape = noise3D.r;
+                float overcastShape = noise3D.g * 0.6 + 0.2;
+                float baseShape = lerp(pwShape, overcastShape, overcastBlend);
 
-                float erosionAmount = _CloudDetail * erosionMask;
-                baseShape -= erosionData.g * erosionAmount * lerp(0.5, 1.0, h);
-                baseShape -= erosionData.b * _CloudWisp * 0.5;
+                // === EROSION ===
+                float erosionStrength = _CloudDetail * weather.erosion * (1.0 - overcastBlend * 0.7);
+                float erosion = dot(noise3D.gba, float3(0.5, 0.3, 0.2)) * erosionStrength;
+                erosion *= saturate(1.0 - lod * 0.5);
+
+                float edgeMask = smoothstep(0.0, 0.25, baseShape) * smoothstep(0.75, 0.25, baseShape);
+                baseShape -= erosion * (0.3 + edgeMask * 1.0);
+
+                baseShape -= noise3D.a * _CloudWisp * 0.5 * (1.0 - overcastBlend * 0.8);
+                
                 baseShape *= smoothstep(0.0, 0.15, h);
 
-                float density = smoothstep(1.0 - macroCoverage, 1.01, baseShape);
-                return saturate(density * verticalProfile * densityMod) * _CloudDensity;
+                // === DENSITY ===
+                float threshold = max(0.0, 1.0 - weather.macro * 1.3);
+                float sharpness = lerp(0.3, 0.6, overcastBlend);
+                float density = smoothstep(threshold, threshold + sharpness, baseShape);
+                
+                return saturate(density * verticalProfile * weather.density) * _CloudDensity;
+            }
+
+            float SampleCloudDensityLight(float3 p, float heightFraction, float lod, CloudWeather weather)
+            {
+                if (weather.macro < 0.01) return 0.0;
+
+                float h = heightFraction;
+                float t = weather.type * 2.0;
+                float stratusProfile = smoothstep(0.0, 0.1, h) * smoothstep(0.4, 0.2, h);
+                float cumulusProfile = saturate(4.0 * h * (1.0 - h));
+                float cbProfile      = smoothstep(0.0, 0.1, h) * smoothstep(1.0, 0.6, h);
+                float verticalProfile = (t < 1.0) ? lerp(stratusProfile, cumulusProfile, t)
+                                                : lerp(cumulusProfile, cbProfile, t - 1.0);
+
+                float3 noiseUVW = float3(
+                    p.x * CLOUD_NOISE_FREQ * _CloudScale + _CloudWind.x,
+                    h * lerp(0.25, 0.8, weather.type),
+                    p.z * CLOUD_NOISE_FREQ * _CloudScale + _CloudWind.y
+                );
+
+                float4 noise3D = tex3Dlod(_CloudNoise3D, float4(noiseUVW, lod));
+
+                float overcastBlend = saturate((weather.macro - 0.6) * 4.0);
+                float baseShape = lerp(noise3D.r, noise3D.g * 0.6 + 0.2, overcastBlend);
+                baseShape *= smoothstep(0.0, 0.15, h);
+
+                float threshold = max(0.0, 1.0 - weather.macro * 1.3);
+                float sharpness = lerp(0.3, 0.6, overcastBlend);
+                float density = smoothstep(threshold, threshold + sharpness, baseShape);
+                
+                return saturate(density * verticalProfile * weather.density) * _CloudDensity;
             }
 
             // =====================================================================
@@ -699,7 +741,8 @@ Shader "Horizon/Procedural Skybox"
                             float stepSize  = rayLength / float(CLOUD_STEPS);
                             float3 startPos = camOrigin + direction * distToStart;
 
-                            float dither = IGN(i.vertex.xy + float2(0, fmod(_Time.y, 8.0) * 7.0));
+                            float2 ditherUV = fmod(i.vertex.xy, 64.0) / 64.0;
+                            float dither = tex2Dlod(_BlueNoiseTex, float4(ditherUV, 0, 0)).r;
                             startPos += direction * stepSize * dither;
 
                             // --- Light source blending (sun ↔ moon) ---
@@ -719,7 +762,7 @@ Shader "Horizon/Procedural Skybox"
 
                             float cloudCosTheta = dot(direction, mainLightDir);
                             float dayPhase   = DualHG(cloudCosTheta, 0.85, -0.3, 0.7);
-                            float nightPhase = DualHG(cloudCosTheta, 0.5, -0.2, 0.6);
+                            float nightPhase = DualHG(cloudCosTheta, 0.3, -0.1, 0.4);
                             float phaseVal   = lerp(nightPhase, dayPhase, sunWeight);
 
                             // --- Absorption coefficient ---
@@ -731,37 +774,47 @@ Shader "Horizon/Procedural Skybox"
                             [loop]
                             for (int j = 0; j < CLOUD_STEPS; j++)
                             {
-                                float3 pos = startPos + direction * (stepSize * j);
+                                float distAlongRay = distToStart + stepSize * (float)j;
+                                float3 pos = startPos + direction * (stepSize * (float)j);
                                 float heightInfo = (length(pos) - cloudBottomRad) / CLOUD_THICKNESS;
 
-                                float heightMask = step(0.0, heightInfo) * step(heightInfo, 1.0);
-                                if (heightMask < 0.5) continue;
+                                if (heightInfo < 0.0 || heightInfo > 1.0) continue;
 
-                                float dens = SampleCloudDensity(pos + cloudPlanetCenter, heightInfo);
+                                float2 weatherUV = pos.xz * 0.000025 * _CloudScale + (_CloudWind * 0.1);
+                                float4 wData = tex2Dlod(_WeatherMapTex, float4(weatherUV, 0, 0));
+                                
+                                CloudWeather weather;
+                                weather.coverage = wData.r;
+                                weather.type     = wData.g;
+                                weather.erosion  = wData.b;
+                                weather.density  = wData.a;
+                                weather.macro    = smoothstep(1.0 - _CloudCoverage - 0.15, 1.0 - _CloudCoverage + 0.15, weather.coverage);
+
+                                float lod = saturate(distAlongRay / 60000.0) * 4.0;
+
+                                float dens = SampleCloudDensity(pos, heightInfo, lod, weather);
                                 if (dens < 0.001) continue;
 
                                 // ---- Light march ----
                                 float lightOpticalDepth = 0.0;
                                 float totalLightDens = 0.0;
 
-                                #define LIGHT_DENOM 21.0
-
                                 [unroll]
-                                for (int k = 0; k < 4; k++)
+                                for (int k = 0; k < CLOUD_LIGHT_STEPS; k++)
                                 {
-                                    float t0 = CLOUD_THICKNESS * (float(k) * float(k)) / LIGHT_DENOM;
-                                    float t1 = CLOUD_THICKNESS * (float(k + 1) * float(k + 1)) / LIGHT_DENOM;
-                                    float lightStepSize = t1 - t0;
+                                    float t_k = (float)k;
+                                    float t0 = CLOUD_THICKNESS * (t_k * t_k) / LIGHT_DENOM;
+                                    float t1 = CLOUD_THICKNESS * ((t_k + 1.0) * (t_k + 1.0)) / LIGHT_DENOM;
                                     float lightDist = (t0 + t1) * 0.5;
 
                                     float3 lightSamplePos = pos + mainLightDir * lightDist;
                                     float lightH = (length(lightSamplePos) - cloudBottomRad) / CLOUD_THICKNESS;
 
-                                    float lightMask = step(0.0, lightH) * step(lightH, 1.0);
-                                    float lightDens = SampleCloudDensity(lightSamplePos + cloudPlanetCenter, lightH) * lightMask;
-
-                                    totalLightDens += lightDens;
-                                    lightOpticalDepth += lightDens * lightStepSize * absorptionCoeff;
+                                    if (lightH >= 0.0 && lightH <= 1.0) {
+                                        float ld = SampleCloudDensityLight(lightSamplePos, lightH, lod + 1.5, weather);
+                                        totalLightDens += ld;
+                                        lightOpticalDepth += ld * (t1 - t0) * absorptionCoeff;
+                                    }
                                 }
 
                                 // ---- Analytical tail ----
@@ -776,9 +829,13 @@ Shader "Horizon/Procedural Skybox"
                                 float powderTerm = 1.0 - exp(-lightOpticalDepth * 2.0);
                                 float powderWeight = lerp(0.8, 0.2, saturate(cloudCosTheta * 0.5 + 0.5));
                                 float beerPowder = beerTerm * lerp(1.0, powderTerm * 2.0, powderWeight);
+                                float nightBeer = lerp(beerPowder, 0.2, 0.3);
+                                beerPowder = lerp(nightBeer, beerPowder, sunWeight);
 
                                 // ---- Ambient contribution from height ----
-                                float heightGradient = lerp(0.3, 1.0, heightInfo);
+                                float dayHeightGrad   = lerp(0.3, 1.0, heightInfo);
+                                float nightHeightGrad = lerp(0.7, 1.0, heightInfo);
+                                float heightGradient  = lerp(nightHeightGrad, dayHeightGrad, sunWeight);
 
                                 // ---- Combine lighting ----
                                 float3 directLight = activeLightColor * beerPowder * phaseVal;

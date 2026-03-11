@@ -9,9 +9,12 @@ namespace BlackHorizon.HorizonWeatherTime
         [Tooltip("2D Weather Map. R = Coverage, G = Cloud Type/Height.")]
         public Texture2D weatherMapTexture;
 
+        [Tooltip("Blue noise texture for dithering volumetric raymarching.")]
+        public Texture2D blueNoiseTexture;
+
         [Header("Shape & Coverage")]
         public bool enabled = true;
-        public Texture2D cloudNoiseTexture;
+        public Texture3D cloudNoiseTexture;
 
         [Tooltip("How high the cloud layer appears. Affects perspective.")]
         [Range(1f, 10f)]
