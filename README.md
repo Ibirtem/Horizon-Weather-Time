@@ -2,6 +2,8 @@
 
 > ⚠️ **WIP / HEAVY ALPHA:** This system is currently in early, active development. Features are highly experimental, and the architecture may shift as things evolve. Expect bugs, but also expect rapid improvements!
 
+![Sky Preview](Documentation~/Images/sky_preview.png)
+
 **A feature-rich environment, weather, and time-of-day system for Unity & VRChat.**
 
 Horizon is designed to look beautiful **out-of-the-box** while offering deep customization. Whether you need a simple day/night cycle or a complex, directed weather transition, Horizon provides a complete toolset for your scene's atmosphere.
