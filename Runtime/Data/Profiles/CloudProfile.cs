@@ -55,6 +55,29 @@ namespace BlackHorizon.HorizonWeatherTime
         [Range(0f, 5f)]
         public float lightScattering = 2.0f;
 
+        [Header("Cirrus Clouds (2D Layer)")]
+        [Tooltip("The 2D noise texture used for cirrus clouds.")]
+        public Texture2D cirrusNoiseTexture;
+
+        [Tooltip("How much of the sky is covered by cirrus clouds.")]
+        [Range(0f, 1f)]
+        public float cirrusCoverage = 0.76f;
+
+        [Tooltip("The overall opacity/visibility of the cirrus layer.")]
+        [Range(0f, 1f)]
+        public float cirrusOpacity = 0.7f;
+
+        [Tooltip("Scale of the cirrus pattern.")]
+        [Range(0.1f, 5f)]
+        public float cirrusScale = 0.5f;
+
+        [Tooltip("Wind speed and direction specifically for high-altitude cirrus clouds.")]
+        public Vector2 cirrusWindSpeed = new Vector2(0.002f, 0.001f);
+
+        [Tooltip("Base tint for the cirrus clouds. Usually left white. Sun lighting is handled automatically.")]
+        [ColorUsage(false, true)]
+        public Color cirrusTint = Color.white;
+
 #if UNITY_EDITOR
         private void OnValidate()
         {

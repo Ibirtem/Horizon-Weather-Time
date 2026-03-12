@@ -68,8 +68,11 @@ namespace BlackHorizon.HorizonWeatherTime
         // Clouds
         private int CloudNoise3DID, CloudScaleID, CloudCoverageID, CloudWindID, CloudColorID, CloudShadowColorID;
         private int CloudAltitudeID, CloudDensityID, CloudDetailID, CloudWispID, CloudScatterID;
-
         private int WeatherMapTexID, BlueNoiseTexID;
+
+        private int CirrusTexID, CirrusCoverageID, CirrusOpacityID, CirrusScaleID, CirrusWindID, CirrusTintID;
+        private Texture _currentCirrusTexture;
+        private Vector2 _currentCirrusOffset;
 
         // Fog
         private int FogColorID;
@@ -117,6 +120,13 @@ namespace BlackHorizon.HorizonWeatherTime
             CloudDetailID = VRCShader.PropertyToID("_CloudDetail");
             CloudWispID = VRCShader.PropertyToID("_CloudWisp");
             CloudScatterID = VRCShader.PropertyToID("_CloudScatter");
+
+            CirrusTexID = VRCShader.PropertyToID("_CirrusTex");
+            CirrusCoverageID = VRCShader.PropertyToID("_CirrusCoverage");
+            CirrusOpacityID = VRCShader.PropertyToID("_CirrusOpacity");
+            CirrusScaleID = VRCShader.PropertyToID("_CirrusScale");
+            CirrusWindID = VRCShader.PropertyToID("_CirrusWind");
+            CirrusTintID = VRCShader.PropertyToID("_CirrusTint");
 
             WeatherMapTexID = VRCShader.PropertyToID("_WeatherMapTex");
             BlueNoiseTexID = VRCShader.PropertyToID("_BlueNoiseTex");
@@ -301,6 +311,32 @@ namespace BlackHorizon.HorizonWeatherTime
             _skyboxInstance.SetColor(CloudColorID, baseColor);
             _skyboxInstance.SetColor(CloudShadowColorID, shadowColor);
             _skyboxInstance.SetFloat(CloudScatterID, scatter);
+        }
+
+        public void UpdateCirrus(Texture cirrusTex, float coverage, float opacity, float scale, Vector2 windSpeed, Color tint)
+        {
+            EnsureInitialized();
+            if (_skyboxInstance == null) return;
+
+            if (_currentCirrusTexture != cirrusTex)
+            {
+                _skyboxInstance.SetTexture(CirrusTexID, cirrusTex);
+                _currentCirrusTexture = cirrusTex;
+            }
+
+#if !COMPILER_UDONSHARP && UNITY_EDITOR
+            if (Application.isPlaying) { _currentCirrusOffset += windSpeed * Time.deltaTime; }
+#else
+            _currentCirrusOffset += windSpeed * Time.deltaTime;
+#endif
+            if (_currentCirrusOffset.x > 100f) _currentCirrusOffset.x -= 100f;
+            if (_currentCirrusOffset.y > 100f) _currentCirrusOffset.y -= 100f;
+
+            _skyboxInstance.SetVector(CirrusWindID, _currentCirrusOffset);
+            _skyboxInstance.SetFloat(CirrusCoverageID, coverage);
+            _skyboxInstance.SetFloat(CirrusOpacityID, opacity);
+            _skyboxInstance.SetFloat(CirrusScaleID, scale);
+            _skyboxInstance.SetColor(CirrusTintID, tint);
         }
 
         /// <summary>

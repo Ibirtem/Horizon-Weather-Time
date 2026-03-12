@@ -12,6 +12,7 @@ namespace BlackHorizon.HorizonWeatherTime
         public const string DEFAULT_WEATHER_MAP_PATH = "Assets/Horizon Weather & Time/Textures/Horizon_WeatherMap_Gen.png";
         public const string DEFAULT_BLUE_NOISE_PATH = "Assets/Horizon Weather & Time/Textures/Horizon_BlueNoise_Gen.png";
         public const string DEFAULT_CLOUD_NOISE_3D_PATH = "Assets/Horizon Weather & Time/Textures/Horizon_CloudNoise3D_Gen.asset";
+        public const string DEFAULT_CIRRUS_NOISE_PATH = "Assets/Horizon Weather & Time/Textures/Horizon_CirrusNoise_Gen.png";
 
         [MenuItem("Tools/Horizon/WeatherTime/Generate Optimization Maps")]
         public static void ShowWindow()
@@ -45,6 +46,12 @@ namespace BlackHorizon.HorizonWeatherTime
             if (GUILayout.Button("Generate Blue Noise (Multi-Pass)", GUILayout.Height(30)))
             {
                 GenerateBlueNoise(DEFAULT_BLUE_NOISE_PATH);
+            }
+
+            EditorGUILayout.Space();
+            if (GUILayout.Button("Generate Cirrus Noise (Anisotropic)", GUILayout.Height(30)))
+            {
+                GenerateCirrusTexture(DEFAULT_CIRRUS_NOISE_PATH);
             }
         }
 
@@ -156,7 +163,6 @@ namespace BlackHorizon.HorizonWeatherTime
 
         /// <summary>
         /// Domain Warping: Distorts the UV coordinates of FBM with another FBM layer.
-        /// Creates liquid-like, organic swirling patterns instead of rigid noise.
         /// </summary>
         private static float DomainWarpedFBM(float u, float v, float scale, float ox, float oy, int octaves, float warpStrength)
         {
@@ -170,6 +176,156 @@ namespace BlackHorizon.HorizonWeatherTime
             nv -= Mathf.Floor(nv);
 
             return TileableFBM(nu, nv, scale, ox, oy, octaves);
+        }
+
+        /// <summary>
+        /// Generates tileable Perlin noise with independent X and Y scales (Anisotropic).
+        /// </summary>
+        private static float TileablePerlinAniso(float u, float v, float scaleX, float scaleY, float ox, float oy)
+        {
+            float x = u * scaleX + ox;
+            float y = v * scaleY + oy;
+
+            float n00 = Mathf.PerlinNoise(x, y);
+            float n10 = Mathf.PerlinNoise(x - scaleX, y);
+            float n01 = Mathf.PerlinNoise(x, y - scaleY);
+            float n11 = Mathf.PerlinNoise(x - scaleX, y - scaleY);
+
+            float su = u * u * (3f - 2f * u);
+            float sv = v * v * (3f - 2f * v);
+
+            return Mathf.Lerp(Mathf.Lerp(n00, n10, su), Mathf.Lerp(n01, n11, su), sv);
+        }
+
+        private static float TileableFBMAniso(float u, float v, float scaleX, float scaleY, float ox, float oy, int octaves, float lacunarity = 2f, float gain = 0.5f)
+        {
+            float val = 0f, amp = 1f, maxVal = 0f, freq = 1f;
+            for (int i = 0; i < octaves; i++)
+            {
+                val += amp * TileablePerlinAniso(u, v, scaleX * freq, scaleY * freq, ox + i * 17.3f, oy + i * 31.7f);
+                maxVal += amp;
+                amp *= gain;
+                freq *= lacunarity;
+            }
+            return val / maxVal;
+        }
+
+        private static float DomainWarpedFBMAniso(float u, float v, float scaleX, float scaleY, float ox, float oy, int octaves, float warpStrength)
+        {
+            float wu = TileableFBMAniso(u, v, scaleX * 0.7f, scaleY * 0.7f, ox + 50f, oy + 50f, 3);
+            float wv = TileableFBMAniso(u, v, scaleX * 0.7f, scaleY * 0.7f, ox + 100f, oy + 100f, 3);
+
+            float nu = u + (wu - 0.5f) * warpStrength;
+            float nv = v + (wv - 0.5f) * warpStrength;
+
+            nu -= Mathf.Floor(nu);
+            nv -= Mathf.Floor(nv);
+
+            return TileableFBMAniso(nu, nv, scaleX, scaleY, ox, oy, octaves);
+        }
+
+        private static float TileableRidgeAniso(float u, float v, float scaleX, float scaleY, float ox, float oy)
+        {
+            float n = TileablePerlinAniso(u, v, scaleX, scaleY, ox, oy);
+            return 1.0f - Mathf.Abs(n * 2f - 1f);
+        }
+
+        /// <summary>
+        /// Ridge FBM with previous-octave feedback (Mussgrave technique).
+        /// </summary>
+        private static float TileableRidgeFBMAniso(float u, float v, float scaleX, float scaleY,
+            float ox, float oy, int octaves)
+        {
+            float val = 0f, amp = 1f, maxVal = 0f;
+            float freqX = 1f, freqY = 1f;
+            float prev = 1.0f;
+
+            for (int i = 0; i < octaves; i++)
+            {
+                float r = TileableRidgeAniso(u, v,
+                    scaleX * freqX, scaleY * freqY,
+                    ox + i * 17.3f, oy + i * 31.7f);
+                r *= r;
+                val += amp * r * prev;
+                prev = Mathf.Clamp01(r);
+                maxVal += amp;
+                amp *= 0.5f;
+                freqX *= 2.0f;
+                freqY *= 2.2f;
+            }
+            return val / maxVal;
+        }
+
+        /// <summary>
+        /// Rotates UV coordinates around center (0.5, 0.5) by angle in radians.
+        /// </summary>
+        private static void RotateUV(float u, float v, float angle, out float ru, out float rv)
+        {
+            float cos = Mathf.Cos(angle), sin = Mathf.Sin(angle);
+            ru = u * cos - v * sin;
+            rv = u * sin + v * cos;
+        }
+
+        /// <summary>
+        /// Generates an anisotropic, multi-directional noise pattern to simulate high-altitude cirrus filaments.
+        /// Blends multiple domain-warped ridge fractals to create intersecting wind-sheared structures.
+        /// </summary>
+        /// <param name="octaves">Number of noise iterations.</param>
+        /// <param name="warpStrength">Intensity of the UV distortion simulating atmospheric turbulence.</param>
+        private static float MultiDirectionalCirrusCurl(float u, float v, float scaleX, float scaleY,
+            float ox, float oy, int octaves, float warpStrength)
+        {
+            float l0 = CirrusWarpedRidgeFBM(u, v, scaleX, scaleY,
+                ox, oy, octaves, warpStrength);
+
+            float l1 = CirrusWarpedRidgeFBM(u, v, scaleY, scaleX,
+                ox + 173.7f, oy + 173.7f, octaves, warpStrength);
+
+            float l2 = CirrusWarpedRidgeFBM(v, u, scaleX * 0.8f, scaleY * 1.2f,
+                ox + 347.4f, oy + 347.4f, octaves, warpStrength * 1.15f);
+
+            float l3 = CirrusWarpedRidgeFBM(1.0f - v, u, scaleY * 1.1f, scaleX * 0.85f,
+                ox + 521.1f, oy + 521.1f, octaves, warpStrength * 0.9f);
+
+            float z1 = TileableFBM(u, v, 2.5f, ox + 300f, oy + 300f, 2);
+            float z2 = TileableFBM(u, v, 2.5f, ox + 400f, oy + 400f, 2);
+            float z3 = TileableFBM(u, v, 2.0f, ox + 500f, oy + 500f, 2);
+
+            float w0 = Mathf.Clamp01(z1 * z3 * 3f);
+            float w1 = Mathf.Clamp01((1f - z1) * z2 * 2.5f);
+            float w2 = Mathf.Clamp01(z1 * (1f - z2) * 2.5f);
+            float w3 = Mathf.Clamp01((1f - z1) * (1f - z3) * 3f);
+
+            float wSum = w0 + w1 + w2 + w3 + 0.001f;
+
+            return (l0 * w0 + l1 * w1 + l2 * w2 + l3 * w3) / wSum;
+        }
+
+        /// <summary>
+        /// Double domain warping + ridge FBM = curling filaments.
+        /// </summary>
+        private static float CirrusWarpedRidgeFBM(float u, float v, float scaleX, float scaleY,
+            float ox, float oy, int octaves, float warpStrength)
+        {
+            float w1u = TileableFBM(u, v, 3f, ox + 50f, oy + 50f, 3);
+            float w1v = TileableFBM(u, v, 3f, ox + 100f, oy + 100f, 3);
+
+            float nu = u + (w1u - 0.5f) * warpStrength;
+            float nv = v + (w1v - 0.5f) * warpStrength;
+
+            nu -= Mathf.Floor(nu);
+            nv -= Mathf.Floor(nv);
+
+            float w2u = TileableFBM(nu, nv, 5f, ox + 150f, oy + 150f, 3);
+            float w2v = TileableFBM(nu, nv, 5f, ox + 200f, oy + 200f, 3);
+
+            nu += (w2u - 0.5f) * warpStrength * 0.5f;
+            nv += (w2v - 0.5f) * warpStrength * 0.5f;
+
+            nu -= Mathf.Floor(nu);
+            nv -= Mathf.Floor(nv);
+
+            return TileableRidgeFBMAniso(nu, nv, scaleX, scaleY, ox, oy, octaves);
         }
 
         #endregion
@@ -566,6 +722,151 @@ namespace BlackHorizon.HorizonWeatherTime
             float u = h < 8 ? x : y;
             float v = h < 4 ? y : h == 12 || h == 14 ? x : z;
             return ((h & 1) == 0 ? u : -u) + ((h & 2) == 0 ? v : -v);
+        }
+
+        /// <summary>
+        /// Creates spider-web like connectivity between Worley cell centers.
+        /// </summary>
+        private static float WorleyRidges(float u, float v, int cells, float seed)
+        {
+            u = u - Mathf.Floor(u);
+            v = v - Mathf.Floor(v);
+
+            float fu = u * cells, fv = v * cells;
+            int cx = Mathf.FloorToInt(fu), cy = Mathf.FloorToInt(fv);
+            float fx = fu - cx, fy = fv - cy;
+
+            float minDist1 = 10f, minDist2 = 10f;
+
+            for (int dy = -1; dy <= 1; dy++)
+            {
+                for (int dx = -1; dx <= 1; dx++)
+                {
+                    int nx = ((cx + dx) % cells + cells) % cells;
+                    int ny = ((cy + dy) % cells + cells) % cells;
+
+                    float px = Hash2D(nx, ny, seed);
+                    float py = Hash2D(nx, ny, seed + 127.1f);
+
+                    float distX = (dx + px) - fx;
+                    float distY = (dy + py) - fy;
+                    float dist = Mathf.Sqrt(distX * distX + distY * distY);
+
+                    if (dist < minDist1)
+                    {
+                        minDist2 = minDist1;
+                        minDist1 = dist;
+                    }
+                    else if (dist < minDist2)
+                    {
+                        minDist2 = dist;
+                    }
+                }
+            }
+
+            float edge = minDist2 - minDist1;
+            return 1.0f - Mathf.Clamp01(edge * 3.0f);
+        }
+
+        /// <summary>
+        /// Multi-octave Worley ridges for spider-web structures.
+        /// </summary>
+        private static float WorleyRidgeFBM(float u, float v, int baseCells, float seed, int octaves)
+        {
+            float val = 0f, amp = 1f, maxVal = 0f;
+            int cells = baseCells;
+            for (int i = 0; i < octaves; i++)
+            {
+                val += amp * WorleyRidges(u, v, cells, seed + i * 43.7f);
+                maxVal += amp;
+                amp *= 0.45f;
+                cells = (int)(cells * 1.8f);
+            }
+            return val / maxVal;
+        }
+
+        public static Texture2D GenerateCirrusTexture(string path)
+        {
+            int res = 512;
+            Texture2D tex = new Texture2D(res, res, TextureFormat.RGBA32, false);
+            Color[] pixels = new Color[res * res];
+            float ox = Random.value * 100f;
+            float oy = Random.value * 100f;
+
+            float[] rawR = new float[res * res];
+            float[] rawG = new float[res * res];
+            float minR = float.MaxValue, maxR = float.MinValue;
+            float minG = float.MaxValue, maxG = float.MinValue;
+
+            for (int y = 0; y < res; y++)
+            {
+                EditorUtility.DisplayProgressBar("Generating Cirrus Noise",
+                    $"Computing cirrus noise... {y + 1}/{res}", (float)y / res);
+
+                for (int x = 0; x < res; x++)
+                {
+                    float u = (float)x / res;
+                    float v = (float)y / res;
+                    int idx = y * res + x;
+
+                    float wu = TileableFBM(u, v, 3f, ox + 50f, oy + 50f, 3);
+                    float wv = TileableFBM(u, v, 3f, ox + 100f, oy + 100f, 3);
+                    float warpedU = u + (wu - 0.5f) * 0.15f;
+                    float warpedV = v + (wv - 0.5f) * 0.15f;
+                    warpedU -= Mathf.Floor(warpedU);
+                    warpedV -= Mathf.Floor(warpedV);
+
+                    float patches = WorleyFBM(warpedU, warpedV, 5, ox + 10f, 3);
+
+                    float web = WorleyRidgeFBM(warpedU, warpedV, 5, ox + 20f, 3);
+
+                    float perlinVar = DomainWarpedFBM(u, v, 4f, ox, oy, 4, 0.18f);
+
+                    float r = patches * 0.55f + web * 0.3f + perlinVar * 0.15f;
+
+                    rawR[idx] = r;
+                    if (r < minR) minR = r;
+                    if (r > maxR) maxR = r;
+
+                    float g = MultiDirectionalCirrusCurl(u, v, 10f, 3f, ox + 700f, oy + 700f, 4, 0.28f);
+
+                    rawG[idx] = g;
+                    if (g < minG) minG = g;
+                    if (g > maxG) maxG = g;
+                }
+            }
+
+            EditorUtility.ClearProgressBar();
+
+            float rRange = maxR - minR;
+            float gRange = maxG - minG;
+
+            for (int y = 0; y < res; y++)
+            {
+                for (int x = 0; x < res; x++)
+                {
+                    float u = (float)x / res;
+                    float v = (float)y / res;
+                    int idx = y * res + x;
+
+                    float r = Remap01(rawR[idx], minR + rRange * 0.05f, maxR - rRange * 0.02f);
+                    float g = Remap01(rawG[idx], minG + gRange * 0.08f, maxG - gRange * 0.03f);
+
+                    float b = TileableFBM(u, v, 3f, ox + 200f, oy + 200f, 3);
+                    b = Remap01(b, 0.15f, 0.85f);
+
+                    pixels[idx] = new Color(r, g, b, 1f);
+                }
+            }
+
+            tex.SetPixels(pixels);
+            tex.Apply();
+
+            Debug.Log($"<b><color=#33FF33>[CirrusGen]</color></b> Cirrus texture generated.");
+
+            Texture2D savedTex = SaveTexture(tex, path, true);
+            EditorGUIUtility.PingObject(savedTex);
+            return savedTex;
         }
 
         #endregion

@@ -40,6 +40,14 @@ Shader "Horizon/Procedural Skybox"
         _CloudScatter ("Light Absorption", Float) = 0.5
         [HideInInspector] _CloudWind ("Cloud Offset", Vector) = (0,0,0,0)
 
+        [Header(Cirrus Clouds)]
+        [NoScaleOffset] _CirrusTex ("Cirrus Texture", 2D) = "black" {}
+        [HideInInspector] _CirrusCoverage ("Cirrus Coverage", Range(0, 1)) = 0.5
+        [HideInInspector] _CirrusOpacity ("Cirrus Opacity", Range(0, 1)) = 0.8
+        [HideInInspector] _CirrusScale ("Cirrus Scale", Float) = 1.0
+        [HideInInspector] _CirrusWind ("Cirrus Wind Offset", Vector) = (0,0,0,0)
+        [HideInInspector] _CirrusTint ("Cirrus Tint", Color) = (1,1,1,1)
+
         [Header(Horizon Fog)]
         [HideInInspector] _HorizonFogColor ("Fog Color", Color) = (0.5, 0.5, 0.5, 1)
         [HideInInspector] _HorizonFogBlend ("Fog Blend", Range(0.0, 1.0)) = 0.0
@@ -111,6 +119,14 @@ Shader "Horizon/Procedural Skybox"
             float     _CloudWisp;
             float     _CloudScatter;
             float2    _CloudWind;
+
+            // Cirrus Clouds
+            sampler2D _CirrusTex;
+            float     _CirrusCoverage;
+            float     _CirrusOpacity;
+            float     _CirrusScale;
+            float2    _CirrusWind;
+            float4    _CirrusTint;
 
             // Atmosphere
             float  _Turbidity;
@@ -741,15 +757,95 @@ Shader "Horizon/Procedural Skybox"
                 }
 
                 // =============================================================
+                //  3.5 CIRRUS CLOUDS (2D High-Altitude Ice Layer)
+                //  Simulates Cirrus uncinus/fibratus using a multi-layered 2D texture.
+                //  Includes self-shadowing approximations and basic forward scattering.
+                // =============================================================
+
+                float moonPhaseBrightness = saturate(0.5 - 0.5 * dot(i.sunDirection, moonDir));
+                moonPhaseBrightness *= moonPhaseBrightness;
+
+                if (direction.y > 0.01 && _CirrusOpacity > 0.005 && _CirrusCoverage > 0.005)
+                {
+                    float projHeight = direction.y;
+                    float2 cirrusBaseUV = direction.xz / max(projHeight, 0.05) * _CirrusScale * 0.12;
+
+                    float2 uv1 = cirrusBaseUV + _CirrusWind;
+                    float2 uv2 = cirrusBaseUV * 3.1 + _CirrusWind * 1.7 + direction.xz * 0.015;
+                    float2 uv3 = cirrusBaseUV * 7.3 + _CirrusWind * 0.4 - direction.xz * 0.008;
+
+                    float4 layer1 = tex2Dlod(_CirrusTex, float4(uv1, 0, 0));
+                    float4 layer2 = tex2Dlod(_CirrusTex, float4(uv2, 0, 0));
+                    float4 layer3 = tex2Dlod(_CirrusTex, float4(uv3, 0, 0));
+
+                    float3 cirrusWorldPos = _WorldSpaceCameraPos + direction * (10000.0 / max(direction.y, 0.05));
+                    float2 weatherUV = cirrusWorldPos.xz * 0.000025 * _CloudScale + (_CloudWind * 0.1);
+                    float cumulusCoverage = tex2Dlod(_WeatherMapTex, float4(weatherUV, 0, 0)).r;
+                    float cumulusMask = smoothstep(1.0 - _CloudCoverage - 0.1, 1.0 - _CloudCoverage + 0.2, cumulusCoverage);
+                    float cirrusAllowed = 1.0 - cumulusMask * 0.8;
+
+                    // --- Shape: patches × fibers × micro-detail ---
+                    float maskShape = smoothstep(0.15, 0.55, layer1.r);
+                    
+                    float midFibers = layer2.g * 0.7 + 0.3;
+                    
+                    float microDetail = layer3.r * 0.4 + layer3.g * 0.3 + 0.3;
+
+                    float rawShape = maskShape * midFibers * microDetail;
+                    rawShape *= lerp(0.7, 1.0, layer1.b);
+                    rawShape *= cirrusAllowed;
+
+                    // --- Coverage ---
+                    float coverageThresh = 1.0 - _CirrusCoverage;
+                    float density = smoothstep(coverageThresh, coverageThresh + 0.4, rawShape);
+
+                    // --- Path thickening ---
+                    float pathLength = min(1.0 / max(direction.y, 0.1), 3.0);
+                    density = saturate(density * lerp(1.0, pathLength, 0.25));
+
+                    if (density > 0.001)
+                    {
+                        float2 sunShift = normalize(i.sunDirection.xz + 0.001) * 0.03;
+                        float sunSideDensity = tex2Dlod(_CirrusTex, float4(uv1 + sunShift, 0, 0)).r;
+                        float selfShadow = smoothstep(0.0, 0.25, sunSideDensity - layer1.r);
+
+                        float cirrusSunVis = smoothstep(-0.05, 0.2, i.sunDirection.y);
+                        cirrusSunVis *= smoothstep(-0.05, 0.25, i.sunDirection.y) * 0.8 + 0.2;
+
+                        float moonVis = smoothstep(-0.1, 0.1, normalize(_MoonPosition).y);
+                        float moonContrib = moonVis * moonPhaseBrightness * 0.015;
+                        float lightStrength = max(cirrusSunVis, moonContrib);
+
+                        float cosAngle = dot(direction, i.sunDirection);
+                        float fwdScatter = pow(saturate(cosAngle * 0.5 + 0.5), 6.0) * 0.3 * cirrusSunVis;
+
+                        float3 cirrusBrightColor = finalColor * (1.0 + 0.3 * lightStrength) + float3(0.02, 0.02, 0.02) * lightStrength;
+                        cirrusBrightColor *= lerp(float3(1,1,1), _CirrusTint.rgb, 0.3);
+
+                        float opacity = density * density;
+
+                        cirrusBrightColor += finalColor * fwdScatter * opacity;
+                        cirrusBrightColor *= lerp(1.0, 0.5, selfShadow * cirrusSunVis);
+
+                        float extinctionPath = max(pathLength - 1.0, 0.0) * 0.06;
+                        float3 extinction = exp(-RAYLEIGH_BETA * RAYLEIGH_SCALE_HEIGHT * extinctionPath);
+                        cirrusBrightColor *= extinction;
+
+                        float horizonFade = smoothstep(0.01, 0.1, direction.y);
+                        float cirrusAlpha = opacity * _CirrusOpacity * horizonFade;
+                        cirrusAlpha = min(cirrusAlpha, 0.7);
+
+                        finalColor = lerp(finalColor, cirrusBrightColor, cirrusAlpha);
+                    }
+                }
+
+                // =============================================================
                 //  4. VOLUMETRIC CLOUDS (Raymarched)
                 //  Beer-Lambert extinction, multi-sample light march,
                 //  Beer-Powder dark edge, dual HG phase.
                 //  Full moon (sun opposite): dot ≈ -1 → phaseBrightness ≈ 1.0
                 //  New moon (sun same side): dot ≈ +1 → phaseBrightness ≈ 0.0
                 // =============================================================
-                
-                float moonPhaseBrightness = saturate(0.5 - 0.5 * dot(i.sunDirection, moonDir));
-                moonPhaseBrightness *= moonPhaseBrightness;
 
                 if (direction.y > 0.005)
                 {

@@ -156,6 +156,12 @@ namespace BlackHorizon.HorizonWeatherTime
         [SerializeField] private Color[] _bake_cloudColor;
         [SerializeField] private Color[] _bake_cloudShadow;
         [SerializeField] private float[] _bake_cloudScatter;
+        [SerializeField] private Texture2D[] _bake_cirrusTex;
+        [SerializeField] private float[] _bake_cirrusCoverage;
+        [SerializeField] private float[] _bake_cirrusOpacity;
+        [SerializeField] private float[] _bake_cirrusScale;
+        [SerializeField] private Vector2[] _bake_cirrusWind;
+        [SerializeField] private Color[] _bake_cirrusTint;
 
         [SerializeField] private bool[] _bake_fogEnabled;
         [SerializeField] private int[] _bake_fogMode;
@@ -291,6 +297,13 @@ namespace BlackHorizon.HorizonWeatherTime
             _bake_cloudShadow = new Color[count];
             _bake_cloudScatter = new float[count];
 
+            _bake_cirrusTex = new Texture2D[count];
+            _bake_cirrusCoverage = new float[count];
+            _bake_cirrusOpacity = new float[count];
+            _bake_cirrusScale = new float[count];
+            _bake_cirrusWind = new Vector2[count];
+            _bake_cirrusTint = new Color[count];
+
             _bake_fogEnabled = new bool[count];
             _bake_fogMode = new int[count];
             _bake_fogDay = new Color[count];
@@ -371,6 +384,13 @@ namespace BlackHorizon.HorizonWeatherTime
                 _bake_cloudColor[i] = clouds != null ? clouds.baseColor : Color.white;
                 _bake_cloudShadow[i] = clouds != null ? clouds.shadowColor : Color.gray;
                 _bake_cloudScatter[i] = clouds != null ? clouds.lightScattering : 2.0f;
+
+                _bake_cirrusTex[i] = clouds != null ? clouds.cirrusNoiseTexture : null;
+                _bake_cirrusCoverage[i] = clouds != null ? clouds.cirrusCoverage : 0.5f;
+                _bake_cirrusOpacity[i] = clouds != null ? clouds.cirrusOpacity : 0.8f;
+                _bake_cirrusScale[i] = clouds != null ? clouds.cirrusScale : 1.0f;
+                _bake_cirrusWind[i] = clouds != null ? clouds.cirrusWindSpeed : new Vector2(0.005f, 0.002f);
+                _bake_cirrusTint[i] = clouds != null ? clouds.cirrusTint : Color.white;
                 
                 // Fog
                 var fog = p.fogProfile;
@@ -895,12 +915,19 @@ namespace BlackHorizon.HorizonWeatherTime
                     Texture3D safeCloudTex = (_bake_cloudTex != null && _cloudIndex < _bake_cloudTex.Length) ? _bake_cloudTex[_cloudIndex] : null;
                     Texture safeWeatherMap = (_bake_weatherMapTex != null && _cloudIndex < _bake_weatherMapTex.Length) ? _bake_weatherMapTex[_cloudIndex] : null;
                     Texture safeBlueNoise = (_bake_blueNoiseTex != null && _cloudIndex < _bake_blueNoiseTex.Length) ? _bake_blueNoiseTex[_cloudIndex] : null;
+                    Texture2D safeCirrusTex = (_bake_cirrusTex != null && _cloudIndex < _bake_cirrusTex.Length) ? _bake_cirrusTex[_cloudIndex] : null;
 
                     _skyManager.UpdateClouds(safeCloudTex, safeWeatherMap, safeBlueNoise,
                         _bake_cloudAltitude[_cloudIndex], _bake_cloudScale[_cloudIndex], _bake_cloudCoverage[_cloudIndex],
                         _bake_cloudDensity[_cloudIndex], _bake_cloudDetail[_cloudIndex], _bake_cloudWisp[_cloudIndex],
                         _bake_cloudWind[_cloudIndex], _bake_cloudColor[_cloudIndex], _bake_cloudShadow[_cloudIndex],
                         _bake_cloudScatter[_cloudIndex]
+                    );
+
+                    _skyManager.UpdateCirrus(safeCirrusTex,
+                        _bake_cirrusCoverage[_cloudIndex], _bake_cirrusOpacity[_cloudIndex],
+                        _bake_cirrusScale[_cloudIndex], _bake_cirrusWind[_cloudIndex],
+                        _bake_cirrusTint[_cloudIndex]
                     );
                 }
 
