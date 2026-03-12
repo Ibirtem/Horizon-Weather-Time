@@ -471,7 +471,6 @@ namespace BlackHorizon.HorizonWeatherTime
             WeatherProfile clear = CheckAndCreatePreset("Default Clear", "Clear",
                 (p) =>
                 {
-                    p.skyProfile.exposure = 0.3f;
                     p.skyProfile.turbidity = 5f;
                 });
 
@@ -559,7 +558,7 @@ namespace BlackHorizon.HorizonWeatherTime
                 if (skyType == "Overcast")
                 {
                     preset.skyProfile.turbidity = 10f;
-                    preset.skyProfile.exposure = 0.15f;
+                    preset.skyProfile.exposure = 7.5f;
                     preset.skyProfile.rayleigh = 0.5f;
                 }
 
