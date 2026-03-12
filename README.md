@@ -23,10 +23,10 @@ The system is being developed and tested on the latest versions that were releva
 
 - **Accurate Day & Night Cycles:** Sync your world to real-world timezones, and set physical **Latitude** and **Axial Tilt** to accurately simulate celestial trajectories, seasons, and true day/night lengths based on geographical location.
 - **Flexible Weather Direction:** Easily mix and match weather states using reusable Profiles. You can smoothly transition the global weather, or independently override specific layers (e.g., rolling in storm clouds while keeping the ambient lighting intact).
-- **Procedural Atmospherics:** A custom, highly optimized skybox shader that attempts to replicate real atmospheric phenomena. Includes Rayleigh & Mie scattering, physically-based Sun and Moon rendering, realistic starry skies, and raymarched volumetric clouds.
+- **Procedural Atmospherics:** A custom, optimized skybox shader that attempts to replicate real atmospheric phenomena. Includes Rayleigh & Mie scattering, physically-based Sun and Moon rendering, realistic starry skies, and raymarched volumetric clouds.
 - **Smart Dynamic Particles:** The weather particle system follows the player while automatically respecting roofs and overhangs using **depth-based occlusion**. Zero manual setup is required — no more placing "dry zone" triggers by hand. The system intelligently recognizes every interior, keeping your buildings dry automatically.
 - **Built-in Generation Tools:** Includes Editor tools to generate volumetric cloud noises, Worley weather maps, and even accurate Star Maps based on the real-world **HYG Database**. _(Note: The system handles generating and assigning these automatically during setup, so manual work is optional!)_
-- **VRChat & Udon Optimized:** Fully network-synced by default. The system bakes heavy ScriptableObject data into lightweight arrays to bypass Udon overhead, ensuring high performance in VRChat. Supports local client-side weather overrides.
+- **VRChat Ready:** Works out of the box with UdonSharp. All weather data is pre-baked at build time — no runtime overhead. Supports local client-side weather overrides.
 
 ---
 
