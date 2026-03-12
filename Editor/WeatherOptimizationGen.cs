@@ -38,7 +38,7 @@ namespace BlackHorizon.HorizonWeatherTime
             }
 
             EditorGUILayout.Space();
-            if (GUILayout.Button("Generate 3D Cloud Noise (Takes ~15-30 sec)", GUILayout.Height(30)))
+            if (GUILayout.Button("Generate 3D Cloud Noise (Takes ~30-60 sec)", GUILayout.Height(30)))
             {
                 Generate3DCloudNoise(DEFAULT_CLOUD_NOISE_3D_PATH);
             }
@@ -328,6 +328,42 @@ namespace BlackHorizon.HorizonWeatherTime
             return TileableRidgeFBMAniso(nu, nv, scaleX, scaleY, ox, oy, octaves);
         }
 
+        /// <summary>
+        /// Multi-octave tileable 3D Perlin FBM.
+        /// </summary>
+        private static float PerlinFBM3D(float x, float y, float z, int basePeriod, int octaves)
+        {
+            float sum = 0f, amp = 1f, total = 0f;
+            int period = basePeriod;
+            for (int i = 0; i < octaves; i++)
+            {
+                sum += amp * TileablePerlin3D(x, y, z, period);
+                total += amp;
+                amp *= 0.5f;
+                period *= 2;
+            }
+            return sum / total;
+        }
+
+        /// <summary>
+        /// Multi-octave tileable 3D inverted Worley FBM.
+        /// Inverted: 1 at cell centers (cloud cores), 0 at edges.
+        /// </summary>
+        private static float InvWorleyFBM3D(float x, float y, float z,
+            int baseCells, int seed, int octaves)
+        {
+            float sum = 0f, amp = 1f, total = 0f;
+            int cells = baseCells;
+            for (int i = 0; i < octaves; i++)
+            {
+                sum += amp * (1f - TileableWorley3D(x, y, z, cells, seed + i * 137));
+                total += amp;
+                amp *= 0.5f;
+                cells *= 2;
+            }
+            return sum / total;
+        }
+
         #endregion
 
         #region Generators
@@ -359,8 +395,8 @@ namespace BlackHorizon.HorizonWeatherTime
                     coverage = Remap01(coverage, 0.12f, 0.72f);
 
                     // G: Cloud Type
-                    float cloudType = TileableFBM(u, v, 5f, -ox, -oy, 3);
-                    cloudType = Mathf.Lerp(0.2f, 0.8f, cloudType);
+                    float cloudType = TileableFBM(u, v, 3f, -ox, -oy, 4);
+                    cloudType = Mathf.Clamp01(cloudType * 1.4f - 0.2f);
 
                     // B: Erosion Mask
                     float erosionMask = TileableFBM(u, v, 16f, ox * 2f, oy * 2f, 4);
@@ -424,43 +460,31 @@ namespace BlackHorizon.HorizonWeatherTime
         }
 
         /// <summary>
-        /// Generates a 128x128x128 3D texture. R = Perlin-Worley, GBA = Worley (different frequencies).
+        /// Generates a 128³ 3D texture for volumetric clouds.
         /// </summary>
         public static void Generate3DCloudNoise(string path)
         {
             int res = 128;
-            int totalVoxels = res * res * res;
+            int total = res * res * res;
             Texture3D tex = new Texture3D(res, res, res, TextureFormat.RGBA32, true);
-            Color[] pixels = new Color[totalVoxels];
+            Color[] pixels = new Color[total];
 
-            float[] rawPerlin1 = new float[totalVoxels];
-            float[] rawPerlin2 = new float[totalVoxels];
-            float[] rawPerlin3 = new float[totalVoxels];
+            float[] rawPerlin = new float[total];
+            float[] rawCarve = new float[total];
+            float[] rawG = new float[total];
+            float[] rawB = new float[total];
+            float[] rawA = new float[total];
 
-            float[] rawW4 = new float[totalVoxels];
-            float[] rawW8_carve = new float[totalVoxels];
-            float[] rawW16_carve = new float[totalVoxels];
-
-            float[] rawW8_erosion = new float[totalVoxels];
-            float[] rawW16_erosion = new float[totalVoxels];
-            float[] rawW24_erosion = new float[totalVoxels];
-
-            float minP1 = float.MaxValue, maxP1 = float.MinValue;
-            float minP2 = float.MaxValue, maxP2 = float.MinValue;
-            float minP3 = float.MaxValue, maxP3 = float.MinValue;
-
-            float minW4 = float.MaxValue, maxW4 = float.MinValue;
-            float minW8c = float.MaxValue, maxW8c = float.MinValue;
-            float minW16c = float.MaxValue, maxW16c = float.MinValue;
-
-            float minW8e = float.MaxValue, maxW8e = float.MinValue;
-            float minW16e = float.MaxValue, maxW16e = float.MinValue;
-            float minW24e = float.MaxValue, maxW24e = float.MinValue;
+            float minP = float.MaxValue, maxP = float.MinValue;
+            float minC = float.MaxValue, maxC = float.MinValue;
+            float minG = float.MaxValue, maxG = float.MinValue;
+            float minB = float.MaxValue, maxB = float.MinValue;
+            float minA = float.MaxValue, maxA = float.MinValue;
 
             try
             {
                 // =====================================================
-                //  PASS 1: Generate raw noise values
+                //  PASS 1: Compute raw noise
                 // =====================================================
                 for (int z = 0; z < res; z++)
                 {
@@ -477,58 +501,49 @@ namespace BlackHorizon.HorizonWeatherTime
                             float v = (float)y / res;
                             float w = (float)z / res;
 
-                            // --- Perlin FBM octaves (3 octaves, periods 5, 10, 20) ---
-                            float p1 = TileablePerlin3D(u, v, w, 5);
-                            float p2 = TileablePerlin3D(u, v, w, 10);
-                            float p3 = TileablePerlin3D(u, v, w, 20);
+                            float perlin = PerlinFBM3D(u, v, w, 4, 4);
 
-                            rawPerlin1[idx] = p1;
-                            rawPerlin2[idx] = p2;
-                            rawPerlin3[idx] = p3;
+                            float carve = InvWorleyFBM3D(u, v, w, 3, 111, 3);
 
-                            if (p1 < minP1) minP1 = p1; if (p1 > maxP1) maxP1 = p1;
-                            if (p2 < minP2) minP2 = p2; if (p2 > maxP2) maxP2 = p2;
-                            if (p3 < minP3) minP3 = p3; if (p3 > maxP3) maxP3 = p3;
+                            rawPerlin[idx] = perlin;
+                            rawCarve[idx] = carve;
+                            if (perlin < minP) minP = perlin; if (perlin > maxP) maxP = perlin;
+                            if (carve < minC) minC = carve; if (carve > maxC) maxC = carve;
 
-                            // --- Worley for R-channel carving (3 octaves) ---
-                            float worley4 = TileableWorley3D(u, v, w, 4, 111);
-                            float worley8c = TileableWorley3D(u, v, w, 8, 222);
-                            float worley16c = TileableWorley3D(u, v, w, 16, 277);
+                            float wG = InvWorleyFBM3D(u, v, w, 2, 222, 3);
+                            float pG = TileablePerlin3D(u, v, w, 12);
+                            float g = wG * 0.7f + pG * 0.3f;
+                            rawG[idx] = g;
+                            if (g < minG) minG = g; if (g > maxG) maxG = g;
 
-                            rawW4[idx] = worley4;
-                            rawW8_carve[idx] = worley8c;
-                            rawW16_carve[idx] = worley16c;
+                            float wB = InvWorleyFBM3D(u, v, w, 4, 333, 3);
+                            float pB = TileablePerlin3D(u, v, w, 16);
+                            float b = wB * 0.7f + pB * 0.3f;
+                            rawB[idx] = b;
+                            if (b < minB) minB = b; if (b > maxB) maxB = b;
 
-                            if (worley4 < minW4) minW4 = worley4; if (worley4 > maxW4) maxW4 = worley4;
-                            if (worley8c < minW8c) minW8c = worley8c; if (worley8c > maxW8c) maxW8c = worley8c;
-                            if (worley16c < minW16c) minW16c = worley16c; if (worley16c > maxW16c) maxW16c = worley16c;
+                            float warpAmt = 0.05f;
+                            float dwx = TileablePerlin3D(u, v, w, 8) - 0.5f;
+                            float dwy = TileablePerlin3D(
+                                u + 0.247f, v + 0.369f, w + 0.134f, 8) - 0.5f;
+                            float dwz = TileablePerlin3D(
+                                u + 0.493f, v + 0.701f, w + 0.416f, 8) - 0.5f;
 
-                            // --- Worley for erosion G, B, A channels ---
-                            float worley8e = TileableWorley3D(u, v, w, 8, 333);
-                            float worley16e = TileableWorley3D(u, v, w, 16, 444);
+                            float wu = u + dwx * warpAmt; wu -= Mathf.Floor(wu);
+                            float wv = v + dwy * warpAmt; wv -= Mathf.Floor(wv);
+                            float ww = w + dwz * warpAmt; ww -= Mathf.Floor(ww);
 
-                            float curlAmount = 0.04f;
-                            float cu = u + (p1 - 0.5f) * curlAmount;
-                            float cv = v + (p2 - 0.5f) * curlAmount;
-                            float cw = w + (p3 - 0.5f) * curlAmount;
-                            cu -= Mathf.Floor(cu);
-                            cv -= Mathf.Floor(cv);
-                            cw -= Mathf.Floor(cw);
-                            float worley24e = TileableWorley3D(cu, cv, cw, 24, 555);
-
-                            rawW8_erosion[idx] = worley8e;
-                            rawW16_erosion[idx] = worley16e;
-                            rawW24_erosion[idx] = worley24e;
-
-                            if (worley8e < minW8e) minW8e = worley8e; if (worley8e > maxW8e) maxW8e = worley8e;
-                            if (worley16e < minW16e) minW16e = worley16e; if (worley16e > maxW16e) maxW16e = worley16e;
-                            if (worley24e < minW24e) minW24e = worley24e; if (worley24e > maxW24e) maxW24e = worley24e;
+                            float wA = InvWorleyFBM3D(wu, wv, ww, 8, 444, 3);
+                            float pA = TileablePerlin3D(wu, wv, ww, 24);
+                            float a = wA * 0.75f + pA * 0.25f;
+                            rawA[idx] = a;
+                            if (a < minA) minA = a; if (a > maxA) maxA = a;
                         }
                     }
                 }
 
                 // =====================================================
-                //  PASS 2: Normalize and compose channels
+                //  PASS 2: Normalize and compose R channel
                 // =====================================================
                 for (int z = 0; z < res; z++)
                 {
@@ -542,46 +557,14 @@ namespace BlackHorizon.HorizonWeatherTime
                         {
                             int idx = x + y * res + z * res * res;
 
-                            float p1 = Normalize(rawPerlin1[idx], minP1, maxP1);
-                            float p2 = Normalize(rawPerlin2[idx], minP2, maxP2);
-                            float p3 = Normalize(rawPerlin3[idx], minP3, maxP3);
+                            float perlin = Normalize(rawPerlin[idx], minP, maxP);
+                            float carve = Normalize(rawCarve[idx], minC, maxC);
 
-                            float w4 = Normalize(rawW4[idx], minW4, maxW4);
-                            float w8c = Normalize(rawW8_carve[idx], minW8c, maxW8c);
-                            float w16c = Normalize(rawW16_carve[idx], minW16c, maxW16c);
+                            float r = RemapClamped(perlin, (1f - carve) * 0.85f, 1f, 0f, 1f);
 
-                            float w8e = Normalize(rawW8_erosion[idx], minW8e, maxW8e);
-                            float w16e = Normalize(rawW16_erosion[idx], minW16e, maxW16e);
-                            float w24e = Normalize(rawW24_erosion[idx], minW24e, maxW24e);
-
-                            // ============================================
-                            //  R CHANNEL: Perlin-Worley base shape
-                            // ============================================
-
-                            float perlinFBM = p1 * 0.55f + p2 * 0.30f + p3 * 0.15f;
-
-                            float invW4 = 1.0f - w4;
-                            float invW8c = 1.0f - w8c;
-                            float invW16c = 1.0f - w16c;
-
-                            float worleyCarve = invW4 * 0.50f + invW8c * 0.30f + invW16c * 0.20f;
-
-                            float r = RemapClamped(perlinFBM, 1.0f - worleyCarve, 1.0f, 0.0f, 1.0f);
-
-                            // ============================================
-                            //  G CHANNEL: Medium erosion (8 cells)
-                            // ============================================
-                            float g = 1.0f - w8e;
-
-                            // ============================================
-                            //  B CHANNEL: Fine erosion (16 cells)
-                            // ============================================
-                            float b = 1.0f - w16e;
-
-                            // ============================================
-                            //  A CHANNEL: Micro detail / wisp (24 cells, curl-distorted)
-                            // ============================================
-                            float a = 1.0f - w24e;
+                            float g = Normalize(rawG[idx], minG, maxG);
+                            float b = Normalize(rawB[idx], minB, maxB);
+                            float a = Normalize(rawA[idx], minA, maxA);
 
                             pixels[idx] = new Color(r, g, b, a);
                         }
@@ -597,11 +580,7 @@ namespace BlackHorizon.HorizonWeatherTime
                 AssetDatabase.CreateAsset(tex, path);
                 AssetDatabase.SaveAssets();
 
-                Debug.Log($"<b><color=#33FF33>[CloudNoise]</color></b> 3D texture saved: {path}\n" +
-                        $"  R: Perlin FBM (3 oct) × Worley carve (3 oct) → fractal cloud shapes\n" +
-                        $"  G: Inv Worley 8 cells → medium erosion / overcast shape\n" +
-                        $"  B: Inv Worley 16 cells → fine erosion\n" +
-                        $"  A: Inv Worley 24 cells (curl-distorted) → micro detail / wisps");
+                Debug.Log($"<b><color=#33FF33>[CloudNoise]</color></b> 3D texture saved: {path}");
 
                 EditorGUIUtility.PingObject(tex);
             }

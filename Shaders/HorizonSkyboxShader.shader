@@ -178,9 +178,9 @@ Shader "Horizon/Procedural Skybox"
             #define CLOUD_LIGHT_STEPS   4
             #define LIGHT_DENOM         21.0
             #define CLOUD_PLANET_RADIUS 600000.0
-            #define CLOUD_THICKNESS     1800.0
+            #define CLOUD_THICKNESS     2500.0
 
-            #define CLOUD_NOISE_FREQ   0.00015
+            #define CLOUD_NOISE_FREQ   0.00045
             #define CLOUD_WEATHER_FREQ 0.000038
 
             // =====================================================================
@@ -499,28 +499,33 @@ Shader "Horizon/Procedural Skybox"
                 float macro;
             };
 
+            // =====================================================================
+            //  CLOUD HEIGHT GRADIENT
+            // =====================================================================
+
             float CloudHeightGradient(float h, float cloudType)
             {
-                float stratus = smoothstep(0.0, 0.05, h) * smoothstep(0.2, 0.1, h);
-                
-                float cumulus = smoothstep(0.0, 0.1, h) * smoothstep(0.9, 0.45, h);
-                
-                float cb = smoothstep(0.0, 0.08, h) * smoothstep(1.0, 0.7, h);
-                
-                float t = cloudType * 2.0;
-                return (t < 1.0) ? lerp(stratus, cumulus, t)
-                                : lerp(cumulus, cb, t - 1.0);
+                float effectiveType = pow(cloudType, 1.6);
+
+                float topHeight = lerp(0.18, 0.93, effectiveType);
+
+                float topWidth = lerp(0.04, 0.18, effectiveType);
+
+                float base = smoothstep(0.0, 0.07, h);
+
+                float top = 1.0 - smoothstep(topHeight - topWidth,
+                                            topHeight + topWidth * 0.6, h);
+
+                return base * top;
             }
+
+            // =====================================================================
+            //  DENSITY HEIGHT REMAP
+            // =====================================================================
 
             float DensityHeightRemap(float baseNoise, float h, float coverage)
             {
-                float bottomRemap = saturate(Remap(h, 0.0, 0.15, 0.0, 1.0));
-                float topRemap    = saturate(Remap(h, 0.5, 1.0, 1.0, 0.0));
-                float heightAlter = bottomRemap * topRemap;
-                
-                float coverageRemap = saturate(Remap(baseNoise * heightAlter, 1.0 - coverage, 1.0, 0.0, 1.0));
-                
-                return coverageRemap;
+                return saturate(Remap(baseNoise, 1.0 - coverage, 1.0, 0.0, 1.0));
             }
 
             float SampleCloudDensity(float3 p, float heightFraction, float lod, CloudWeather weather)
@@ -528,12 +533,11 @@ Shader "Horizon/Procedural Skybox"
                 if (weather.macro < 0.01) return 0.0;
 
                 float h = heightFraction;
-                
                 float horizFreq = CLOUD_NOISE_FREQ * _CloudScale;
-                
-                float verticalBase = h * 0.5;
+
+                float verticalBase = h * 0.7;
                 float verticalOffset = sin(p.x * 0.00013) * cos(p.z * 0.00017) * 0.15;
-                
+
                 float3 noiseUVW = float3(
                     p.x * horizFreq + _CloudWind.x,
                     verticalBase + verticalOffset,
@@ -548,21 +552,21 @@ Shader "Horizon/Procedural Skybox"
                 float overcastShape = noise3D.g * 0.6 + 0.2;
                 float baseNoise = lerp(pwShape, overcastShape, overcastBlend);
 
-                // === DENSITY-HEIGHT REMAP ===
+                // === HEIGHT + COVERAGE ===
                 float heightGrad = CloudHeightGradient(h, weather.type);
                 float shapedNoise = baseNoise * heightGrad;
-                
+
                 float effectiveCoverage = weather.macro;
                 float baseShape = DensityHeightRemap(shapedNoise, h, effectiveCoverage);
 
                 // === EROSION ===
-                float erosionStrength = _CloudDetail * weather.erosion 
+                float erosionStrength = _CloudDetail * weather.erosion
                                     * (1.0 - overcastBlend * 0.7);
                 float detailNoise = dot(noise3D.gba, float3(0.5, 0.3, 0.2));
-                
+
                 float edgeFactor = smoothstep(0.0, 0.3, baseShape) * smoothstep(0.8, 0.3, baseShape);
                 float erosion = detailNoise * erosionStrength * edgeFactor;
-                
+
                 baseShape = saturate(baseShape - erosion);
 
                 baseShape -= noise3D.a * _CloudWisp * 0.3 * (1.0 - overcastBlend * 0.8) * edgeFactor;
@@ -576,11 +580,11 @@ Shader "Horizon/Procedural Skybox"
                 if (weather.macro < 0.01) return 0.0;
 
                 float h = heightFraction;
-
                 float horizFreq = CLOUD_NOISE_FREQ * _CloudScale;
-                float verticalBase = h * 0.5;
+
+                float verticalBase = h * 0.7;
                 float verticalOffset = sin(p.x * 0.00013) * cos(p.z * 0.00017) * 0.15;
-                
+
                 float3 noiseUVW = float3(
                     p.x * horizFreq + _CloudWind.x,
                     verticalBase + verticalOffset,
@@ -594,7 +598,7 @@ Shader "Horizon/Procedural Skybox"
 
                 float heightGrad = CloudHeightGradient(h, weather.type);
                 float shapedNoise = baseNoise * heightGrad;
-                
+
                 float baseShape = DensityHeightRemap(shapedNoise, h, weather.macro);
 
                 return saturate(baseShape * weather.density) * _CloudDensity;
@@ -914,10 +918,12 @@ Shader "Horizon/Procedural Skybox"
                                 
                                 CloudWeather weather;
                                 weather.coverage = wData.r;
-                                weather.type     = wData.g;
+                                weather.type     = saturate(wData.g * 1.3 - 0.1);
                                 weather.erosion  = wData.b;
                                 weather.density  = wData.a;
-                                weather.macro    = smoothstep(1.0 - _CloudCoverage - 0.15, 1.0 - _CloudCoverage + 0.15, weather.coverage);
+                                weather.macro    = smoothstep(1.0 - _CloudCoverage - 0.15,
+                                                            1.0 - _CloudCoverage + 0.15,
+                                                            weather.coverage);
 
                                 float lod = saturate(distAlongRay / 60000.0) * 4.0;
 
