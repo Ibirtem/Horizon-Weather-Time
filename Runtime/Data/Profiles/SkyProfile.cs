@@ -8,7 +8,7 @@ namespace BlackHorizon.HorizonWeatherTime
         [Header("Atmosphere")]
         [Tooltip("Controls the overall turbidity (haziness) of the atmosphere.")]
         [Range(1f, 10f)]
-        public float turbidity = 2.5f;
+        public float turbidity = 5.0f;
 
         [Tooltip("Controls the Rayleigh scattering effect (blue sky).")]
         [Range(0f, 5f)]
@@ -20,7 +20,7 @@ namespace BlackHorizon.HorizonWeatherTime
 
         [Tooltip("Controls the directionality of Mie scattering.")]
         [Range(0f, 1f)]
-        public float mieDirectionalG = 0.76f;
+        public float mieDirectionalG = 0.8f;
 
         [Tooltip("Overall brightness of the skybox.")]
         [Range(0f, 50f)]
@@ -42,10 +42,10 @@ namespace BlackHorizon.HorizonWeatherTime
         public float starsRotationSpeed = 0.5f;
 
         [Range(0f, 5f)]
-        public float starsIntensity = 0.02f;
+        public float starsIntensity = 0.04f;
 
         [Range(0f, 5f)]
-        public float milkyWayIntensity = 0.002f;
+        public float milkyWayIntensity = 0.005f;
 
         [Header("Stars Twinkle")]
         [Range(1f, 300f)]
