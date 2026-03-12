@@ -101,6 +101,18 @@ namespace BlackHorizon.HorizonWeatherTime
             CheckLUTStatus();
 
             EditorApplication.delayCall += () => { if (_target != null) _target.Refresh(); };
+
+            EditorApplication.delayCall += () =>
+            {
+                if (_target != null)
+                {
+                    if (WeatherBakeUtility.NeedsRebake(_target))
+                    {
+                        WeatherBakeUtility.BakeAllProfiles(_target);
+                    }
+                    _target.Refresh();
+                }
+            };
         }
 
         public override void OnInspectorGUI()
@@ -351,6 +363,29 @@ namespace BlackHorizon.HorizonWeatherTime
             }
 
             EditorGUILayout.PropertyField(_allowedWeatherProfilesProp, new GUIContent("Loaded Profiles List"), true);
+
+            EditorGUILayout.Space(4);
+            EditorGUILayout.BeginHorizontal();
+
+            if (GUILayout.Button("🔨 Force Rebake All Profiles", GUILayout.Height(25)))
+            {
+                WeatherBakeUtility.BakeAllProfiles(_target);
+                _target.Refresh();
+            }
+
+            var bakedProp = serializedObject.FindProperty("bakedProfiles");
+            int bakedCount = bakedProp != null ? bakedProp.arraySize : 0;
+            int profileCount = _target.weatherProfilesList != null ? _target.weatherProfilesList.Length : 0;
+
+            Color statusColor = (bakedCount == profileCount && bakedCount > 0)
+                ? new Color(0.5f, 1f, 0.5f)
+                : new Color(1f, 0.7f, 0.4f);
+
+            GUI.color = statusColor;
+            GUILayout.Label($"Baked: {bakedCount}/{profileCount}", EditorStyles.miniLabel, GUILayout.Width(80));
+            GUI.color = Color.white;
+
+            EditorGUILayout.EndHorizontal();
         }
 
         private void DrawCoreModulesSection()
