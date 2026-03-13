@@ -29,11 +29,11 @@ namespace BlackHorizon.HorizonWeatherTime
 
         [Tooltip("How much of the sky is covered by clouds.")]
         [Range(0f, 1f)]
-        public float coverage = 0.5f;
+        public float coverage = 0.6f;
 
         [Tooltip("The density or 'thickness' of the clouds.")]
         [Range(0.1f, 5f)]
-        public float density = 1.8f;
+        public float density = 1.4f;
 
         [Header("Detail & Animation")]
         [Tooltip("How much the detail layer 'erodes' the base shape.")]

@@ -513,7 +513,7 @@ Shader "Horizon/Procedural Skybox"
                             * (1.0 - smoothstep(0.08, 0.25, h));
                 
                 float cumulus = smoothstep(0.0, 0.08, h) 
-                            * (1.0 - smoothstep(0.35, 0.85, h));
+                            * (1.0 - smoothstep(0.30, 0.70, h));
                 
                 float cb = smoothstep(0.0, 0.03, h) 
                         * (1.0 - smoothstep(0.70, 1.0, h));
@@ -539,8 +539,9 @@ Shader "Horizon/Procedural Skybox"
                 float h = heightFraction;
                 float horizFreq = CLOUD_NOISE_FREQ * _CloudScale;
 
-                float verticalBase = h * 1.0;
+                float verticalBase = h * 2.0;
                 float verticalOffset = sin(p.x * 0.00013) * cos(p.z * 0.00017) * 0.15;
+
                 float verticalDrift = _Time.y * 0.0003;
 
                 float2 curlUV = p.xz * 0.0004 + _CloudWind * 0.05;
@@ -562,6 +563,9 @@ Shader "Horizon/Procedural Skybox"
                 // === HEIGHT + COVERAGE ===
                 float heightGrad = CloudHeightGradient(h, weather.type);
                 float effectiveCoverage = weather.macro * heightGrad;
+
+                if (effectiveCoverage < 0.01) return 0.0;
+
                 float baseShape = DensityHeightRemap(baseNoise, h, effectiveCoverage);
 
                 if (applyErosion && baseShape > 0.001)
@@ -575,11 +579,15 @@ Shader "Horizon/Procedural Skybox"
 
                     float edgeFactor = smoothstep(0.0, 0.3, baseShape) 
                                     * smoothstep(0.8, 0.3, baseShape);
-                    float erosion = detailForErosion * erosionStrength * edgeFactor;
+
+                    float erosionHeightMask = smoothstep(0.0, 0.15, h);
+
+                    float erosion = detailForErosion * erosionStrength 
+                                * edgeFactor * erosionHeightMask;
                     baseShape = saturate(baseShape - erosion);
 
                     baseShape -= noise3D.a * _CloudWisp * 0.3 
-                            * (1.0 - overcastBlend * 0.8) * edgeFactor;
+                            * (1.0 - overcastBlend * 0.8) * edgeFactor * erosionHeightMask;
                     baseShape = max(0.0, baseShape);
                 }
 
