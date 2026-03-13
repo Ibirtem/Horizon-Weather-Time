@@ -873,6 +873,10 @@ Shader "Horizon/Procedural Skybox"
                         if (distToStart <= maxDist)
                         {
                             float rayLength = min(distToEnd - distToStart, maxDist);
+
+                            float distRatio = saturate(distToStart / maxDist);
+                            float stepScale = lerp(1.0, 2.0, distRatio * distRatio);
+
                             float fineStep  = rayLength / float(CLOUD_STEPS);
                             float3 startPos = camOrigin + direction * distToStart;
 
