@@ -12,6 +12,9 @@ namespace BlackHorizon.HorizonWeatherTime
         [Tooltip("Blue noise texture for dithering volumetric raymarching.")]
         public Texture2D blueNoiseTexture;
 
+        [Tooltip("2D Curl noise (RG). Distorts cloud noise UV to simulate atmospheric turbulence.")]
+        public Texture2D curlNoiseTexture;
+
         [Header("Shape & Coverage")]
         public bool enabled = true;
         public Texture3D cloudNoiseTexture;

@@ -708,6 +708,7 @@ private void OnValidate()
                 {
                     _skyManager.UpdateClouds(
                         cp.cloudNoiseTexture, cp.weatherMapTexture, cp.blueNoiseTexture,
+                        cp.curlNoiseTexture,
                         cp.cloudAltitude, cp.cloudScale, cp.cloudCoverage,
                         cp.cloudDensity, cp.cloudDetailAmount, cp.cloudWispiness,
                         cp.cloudWindSpeed, cp.cloudBaseColor, cp.cloudShadowColor,

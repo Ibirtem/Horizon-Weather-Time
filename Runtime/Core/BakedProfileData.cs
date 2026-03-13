@@ -75,6 +75,7 @@ namespace BlackHorizon.HorizonWeatherTime
         public Texture3D cloudNoiseTexture;
         public Texture weatherMapTexture;
         public Texture blueNoiseTexture;
+        public Texture2D curlNoiseTexture;
         public float cloudAltitude = 4.0f;
         public float cloudScale = 3.5f;
         public float cloudCoverage = 0.5f;
@@ -187,6 +188,7 @@ namespace BlackHorizon.HorizonWeatherTime
                 cloudNoiseTexture = cp.cloudNoiseTexture;
                 weatherMapTexture = cp.weatherMapTexture;
                 blueNoiseTexture = cp.blueNoiseTexture;
+                curlNoiseTexture = cp.curlNoiseTexture;
                 cloudAltitude = cp.altitude;
                 cloudScale = cp.scale;
                 cloudCoverage = cp.enabled ? cp.coverage : 0f;

@@ -28,6 +28,7 @@ Shader "Horizon/Procedural Skybox"
         [NoScaleOffset] _CloudNoise3D ("Cloud Noise 3D (RGBA)", 3D) = "black" {}
         [NoScaleOffset] _BlueNoiseTex ("Blue Noise (R)", 2D) = "black" {}
         [NoScaleOffset] _WeatherMapTex ("Weather Map (RGBA)", 2D) = "black" {}
+        [NoScaleOffset] _CurlNoiseTex ("Curl Noise (RG)", 2D) = "gray" {}
         
         _CloudColor ("Cloud Lit Color", Color) = (0.9, 0.9, 0.9, 1)
         _CloudShadowColor ("Cloud Shadow Color", Color) = (0.3, 0.3, 0.35, 1)
@@ -109,6 +110,7 @@ Shader "Horizon/Procedural Skybox"
             sampler3D _CloudNoise3D;
             sampler2D _WeatherMapTex;
             sampler2D _BlueNoiseTex;
+            sampler2D _CurlNoiseTex;
             float4    _CloudColor;
             float4    _CloudShadowColor;
             float     _CloudAltitude;
@@ -539,13 +541,16 @@ Shader "Horizon/Procedural Skybox"
 
                 float verticalBase = h * 1.0;
                 float verticalOffset = sin(p.x * 0.00013) * cos(p.z * 0.00017) * 0.15;
-
                 float verticalDrift = _Time.y * 0.0003;
 
+                float2 curlUV = p.xz * 0.0004 + _CloudWind * 0.05;
+                float2 curlOffset = tex2Dlod(_CurlNoiseTex, float4(curlUV, 0, 0)).rg 
+                                * 2.0 - 1.0;
+
                 float3 noiseUVW = float3(
-                    p.x * horizFreq + _CloudWind.x,
+                    p.x * horizFreq + _CloudWind.x + curlOffset.x * 0.08,
                     verticalBase + verticalOffset + verticalDrift,
-                    p.z * horizFreq + _CloudWind.y
+                    p.z * horizFreq + _CloudWind.y + curlOffset.y * 0.08
                 );
 
                 float4 noise3D = tex3Dlod(_CloudNoise3D, float4(noiseUVW, lod));
@@ -556,7 +561,6 @@ Shader "Horizon/Procedural Skybox"
 
                 // === HEIGHT + COVERAGE ===
                 float heightGrad = CloudHeightGradient(h, weather.type);
-
                 float effectiveCoverage = weather.macro * heightGrad;
                 float baseShape = DensityHeightRemap(baseNoise, h, effectiveCoverage);
 

@@ -13,6 +13,7 @@ namespace BlackHorizon.HorizonWeatherTime
         public const string DEFAULT_BLUE_NOISE_PATH = "Assets/Horizon Weather & Time/Textures/Horizon_BlueNoise_Gen.png";
         public const string DEFAULT_CLOUD_NOISE_3D_PATH = "Assets/Horizon Weather & Time/Textures/Horizon_CloudNoise3D_Gen.asset";
         public const string DEFAULT_CIRRUS_NOISE_PATH = "Assets/Horizon Weather & Time/Textures/Horizon_CirrusNoise_Gen.png";
+        public const string DEFAULT_CURL_NOISE_PATH = "Assets/Horizon Weather & Time/Textures/Horizon_CurlNoise_Gen.png";
 
         [MenuItem("Tools/Horizon/WeatherTime/Generate Optimization Maps")]
         public static void ShowWindow()
@@ -46,6 +47,12 @@ namespace BlackHorizon.HorizonWeatherTime
             if (GUILayout.Button("Generate Blue Noise (Multi-Pass)", GUILayout.Height(30)))
             {
                 GenerateBlueNoise(DEFAULT_BLUE_NOISE_PATH);
+            }
+
+            EditorGUILayout.Space();
+            if (GUILayout.Button("Generate Curl Noise (2D Vector Field)", GUILayout.Height(30)))
+            {
+                GenerateCurlNoise(DEFAULT_CURL_NOISE_PATH);
             }
 
             EditorGUILayout.Space();
@@ -460,7 +467,73 @@ namespace BlackHorizon.HorizonWeatherTime
         }
 
         /// <summary>
-        /// Generates a 128³ 3D texture for volumetric clouds.
+        /// Generates a 2D curl noise texture.
+        /// Curl = rotational derivative of a Perlin potential field.
+        /// R = X offset, G = Z offset. Used to distort cloud noise UV for turbulence.
+        /// </summary>
+        public static Texture2D GenerateCurlNoise(string path)
+        {
+            int res = 128;
+            float scale = 5.0f;
+            float ox = 73.1f, oy = 91.7f;
+            float eps = 1.0f / res;
+            int octaves = 4;
+
+            float[] rawX = new float[res * res];
+            float[] rawY = new float[res * res];
+            float minX = float.MaxValue, maxX = float.MinValue;
+            float minY = float.MaxValue, maxY = float.MinValue;
+
+            // Pass 1: compute raw curl vectors
+            for (int y = 0; y < res; y++)
+            {
+                for (int x = 0; x < res; x++)
+                {
+                    float u = (float)x / res;
+                    float v = (float)y / res;
+                    int idx = y * res + x;
+
+                    float n_pv = TileableFBM(u, v + eps, scale, ox, oy, octaves);
+                    float n_mv = TileableFBM(u, v - eps, scale, ox, oy, octaves);
+                    float n_pu = TileableFBM(u + eps, v, scale, ox, oy, octaves);
+                    float n_mu = TileableFBM(u - eps, v, scale, ox, oy, octaves);
+
+                    float curlX = (n_pv - n_mv) / (2.0f * eps);
+                    float curlY = -(n_pu - n_mu) / (2.0f * eps);
+
+                    rawX[idx] = curlX;
+                    rawY[idx] = curlY;
+
+                    if (curlX < minX) minX = curlX;
+                    if (curlX > maxX) maxX = curlX;
+                    if (curlY < minY) minY = curlY;
+                    if (curlY > maxY) maxY = curlY;
+                }
+            }
+
+            // Pass 2: normalize to [0, 1] for storage
+            Texture2D tex = new Texture2D(res, res, TextureFormat.RGBA32, false);
+            Color[] pixels = new Color[res * res];
+
+            for (int i = 0; i < pixels.Length; i++)
+            {
+                float nx = Remap01(rawX[i], minX, maxX);
+                float ny = Remap01(rawY[i], minY, maxY);
+                pixels[i] = new Color(nx, ny, 0f, 1f);
+            }
+
+            tex.SetPixels(pixels);
+            tex.Apply();
+
+            Debug.Log($"<b><color=#33FF33>[CurlGen]</color></b> Curl noise generated ({res}x{res}). Range X:[{minX:F3}, {maxX:F3}] Y:[{minY:F3}, {maxY:F3}]");
+
+            Texture2D savedTex = SaveTexture(tex, path, true);
+            EditorGUIUtility.PingObject(savedTex);
+            return savedTex;
+        }
+
+        /// <summary>
+        /// Generates a 3D texture for volumetric clouds.
         /// </summary>
         public static void Generate3DCloudNoise(string path)
         {

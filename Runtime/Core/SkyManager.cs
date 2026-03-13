@@ -70,6 +70,9 @@ namespace BlackHorizon.HorizonWeatherTime
         private int CloudAltitudeID, CloudDensityID, CloudDetailID, CloudWispID, CloudScatterID;
         private int WeatherMapTexID, BlueNoiseTexID;
 
+        private int CurlNoiseTexID;
+        private Texture _currentCurlTexture;
+
         private int CirrusTexID, CirrusCoverageID, CirrusOpacityID, CirrusScaleID, CirrusWindID, CirrusTintID;
         private Texture _currentCirrusTexture;
         private Vector2 _currentCirrusOffset;
@@ -130,6 +133,7 @@ namespace BlackHorizon.HorizonWeatherTime
 
             WeatherMapTexID = VRCShader.PropertyToID("_WeatherMapTex");
             BlueNoiseTexID = VRCShader.PropertyToID("_BlueNoiseTex");
+            CurlNoiseTexID = VRCShader.PropertyToID("_CurlNoiseTex");
 
             FogColorID = VRCShader.PropertyToID("_HorizonFogColor");
             FogBlendID = VRCShader.PropertyToID("_HorizonFogBlend");
@@ -279,7 +283,7 @@ namespace BlackHorizon.HorizonWeatherTime
             _skyboxInstance.SetFloat(TwinkleStrengthID, twinkleStrength);
         }
 
-        public void UpdateClouds(Texture3D cloudTex, Texture weatherMapTex, Texture blueNoiseTex, float altitude, float scale, float coverage, float density, float detail, float wisp, Vector2 windSpeed, Color baseColor, Color shadowColor, float scatter)
+        public void UpdateClouds(Texture3D cloudTex, Texture weatherMapTex, Texture blueNoiseTex, Texture2D curlNoiseTex, float altitude, float scale, float coverage, float density, float detail, float wisp, Vector2 windSpeed, Color baseColor, Color shadowColor, float scatter)
         {
             EnsureInitialized();
             if (_skyboxInstance == null) return;
@@ -288,6 +292,13 @@ namespace BlackHorizon.HorizonWeatherTime
             {
                 _skyboxInstance.SetTexture(CloudNoise3DID, cloudTex);
                 _currentCloudTexture = cloudTex;
+            }
+
+            if (_currentCurlTexture != curlNoiseTex)
+            {
+                if (curlNoiseTex != null)
+                    _skyboxInstance.SetTexture(CurlNoiseTexID, curlNoiseTex);
+                _currentCurlTexture = curlNoiseTex;
             }
 
             if (weatherMapTex != null) _skyboxInstance.SetTexture(WeatherMapTexID, weatherMapTex);
