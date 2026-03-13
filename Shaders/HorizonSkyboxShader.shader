@@ -175,17 +175,25 @@ Shader "Horizon/Procedural Skybox"
             // --- Atmosphere Integration ---
             #define ATMOSPHERE_STEPS 16
 
+            // --- Cloud Shape ---
+            #define CLOUD_NOISE_FREQ        0.00045
+            #define CLOUD_WEATHER_FREQ      0.000038
+            #define CLOUD_VERTICAL_SCALE    2.0
+            #define CLOUD_CURL_UV_SCALE     0.0004
+            #define CLOUD_CURL_STRENGTH     0.08
+
             // --- Cloud Raymarching ---
-            #define CLOUD_STEPS         48
-            #define CLOUD_LIGHT_STEPS   4
-            #define LIGHT_DENOM         21.0
-            #define CLOUD_PLANET_RADIUS 600000.0
-            #define CLOUD_THICKNESS     2500.0
+            #define CLOUD_STEPS             48
+            #define CLOUD_EMPTY_STEP_MUL    3.0
+            #define CLOUD_PLANET_RADIUS     600000.0
+            #define CLOUD_MAX_DISTANCE      60000.0
+            #define CLOUD_THICKNESS         2500.0
+            #define CLOUD_TRANSMITTANCE_MIN 0.01
 
-            #define CLOUD_NOISE_FREQ   0.00045
-            #define CLOUD_WEATHER_FREQ 0.000038
-
-            #define CLOUD_EMPTY_STEP_MUL 3.0
+            // --- Cloud Lighting ---
+            #define CLOUD_LIGHT_STEPS       4
+            #define LIGHT_DENOM             21.0
+            #define CLOUD_ABSORPTION_SCALE  0.002
 
             // =====================================================================
             //  UTILITY: 3D Gradient Noise & FBM
@@ -305,7 +313,7 @@ Shader "Horizon/Procedural Skybox"
 
             // =====================================================================
             //  ATMOSPHERE: Ray-Sphere Intersection
-            //  Returns (near, far) distances. Both negative = no intersection.
+            //  Returns (near, far) distances.
             // =====================================================================
 
             float2 AtmosphereRayIntersect(float3 origin, float3 dir, float radius)
@@ -320,7 +328,6 @@ Shader "Horizon/Procedural Skybox"
 
             // =====================================================================
             //  ATMOSPHERE: LUT Sampling
-            //  Replaces the expensive ComputeOpticalDepth integration loop.
             // =====================================================================
 
             float3 SampleOpticalDepthLUT(float altitude, float cosTheta)
@@ -539,19 +546,19 @@ Shader "Horizon/Procedural Skybox"
                 float h = heightFraction;
                 float horizFreq = CLOUD_NOISE_FREQ * _CloudScale;
 
-                float verticalBase = h * 2.0;
+                float verticalBase = h * CLOUD_VERTICAL_SCALE; 
                 float verticalOffset = sin(p.x * 0.00013) * cos(p.z * 0.00017) * 0.15;
 
                 float verticalDrift = _Time.y * 0.0003;
 
-                float2 curlUV = p.xz * 0.0004 + _CloudWind * 0.05;
+                float2 curlUV = p.xz * CLOUD_CURL_UV_SCALE + _CloudWind * 0.05;
                 float2 curlOffset = tex2Dlod(_CurlNoiseTex, float4(curlUV, 0, 0)).rg 
                                 * 2.0 - 1.0;
 
                 float3 noiseUVW = float3(
-                    p.x * horizFreq + _CloudWind.x + curlOffset.x * 0.08,
+                    p.x * horizFreq + _CloudWind.x + curlOffset.x * CLOUD_CURL_STRENGTH,
                     verticalBase + verticalOffset + verticalDrift,
-                    p.z * horizFreq + _CloudWind.y + curlOffset.y * 0.08
+                    p.z * horizFreq + _CloudWind.y + curlOffset.y * CLOUD_CURL_STRENGTH
                 );
 
                 float4 noise3D = tex3Dlod(_CloudNoise3D, float4(noiseUVW, lod));
@@ -856,7 +863,7 @@ Shader "Horizon/Procedural Skybox"
                     {
                         float distToStart = max(0, hitBottom.y);
                         float distToEnd   = hitTop.y;
-                        float maxDist     = 60000.0;
+                        float maxDist = CLOUD_MAX_DISTANCE;
 
                         if (distToStart <= maxDist)
                         {
@@ -920,7 +927,7 @@ Shader "Horizon/Procedural Skybox"
                                 float phaseVal   = lerp(nightPhase, dayPhase, sunWeight);
 
                                 // --- Absorption coefficient ---
-                                float absorptionCoeff = _CloudScatter * 0.002;
+                                float absorptionCoeff = _CloudScatter * CLOUD_ABSORPTION_SCALE;
 
                                 half3 accumColor = 0;
                                 float  transmittance = 1.0;
@@ -931,7 +938,7 @@ Shader "Horizon/Procedural Skybox"
                                 [loop]
                                 for (int j = 0; j < CLOUD_STEPS; j++)
                                 {
-                                    if (t >= rayLength || transmittance < 0.01) break;
+                                    if (t >= rayLength || transmittance < CLOUD_TRANSMITTANCE_MIN) break;
 
                                     float3 pos = startPos + direction * t;
                                     float distAlongRay = distToStart + t;
@@ -948,7 +955,7 @@ Shader "Horizon/Procedural Skybox"
                                     heightInfo = saturate(heightInfo);
 
                                     // --- Level 2: weather-map pre-check ---
-                                    float2 weatherUV = pos.xz * 0.000025 * _CloudScale
+                                    float2 weatherUV = pos.xz * CLOUD_WEATHER_FREQ * _CloudScale
                                                     + (_CloudWind * 0.1) + weatherDrift;
                                     float4 wData = tex2Dlod(_WeatherMapTex,
                                                             float4(weatherUV, 0, 0));
