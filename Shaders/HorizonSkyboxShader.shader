@@ -174,7 +174,7 @@ Shader "Horizon/Procedural Skybox"
             #define ATMOSPHERE_STEPS 16
 
             // --- Cloud Raymarching ---
-            #define CLOUD_STEPS         32
+            #define CLOUD_STEPS         48
             #define CLOUD_LIGHT_STEPS   4
             #define LIGHT_DENOM         21.0
             #define CLOUD_PLANET_RADIUS 600000.0
