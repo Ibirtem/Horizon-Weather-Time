@@ -507,18 +507,17 @@ Shader "Horizon/Procedural Skybox"
 
             float CloudHeightGradient(float h, float cloudType)
             {
-                float effectiveType = pow(cloudType, 1.6);
-
-                float topHeight = lerp(0.18, 0.93, effectiveType);
-
-                float topWidth = lerp(0.04, 0.18, effectiveType);
-
-                float base = smoothstep(0.0, 0.07, h);
-
-                float top = 1.0 - smoothstep(topHeight - topWidth,
-                                            topHeight + topWidth * 0.6, h);
-
-                return base * top;
+                float stratus = smoothstep(0.0, 0.04, h) 
+                            * (1.0 - smoothstep(0.08, 0.25, h));
+                
+                float cumulus = smoothstep(0.0, 0.08, h) 
+                            * (1.0 - smoothstep(0.35, 0.85, h));
+                
+                float cb = smoothstep(0.0, 0.03, h) 
+                        * (1.0 - smoothstep(0.70, 1.0, h));
+                
+                float a = lerp(stratus, cumulus, saturate(cloudType * 2.0));
+                return lerp(a, cb, saturate(cloudType * 2.0 - 1.0));
             }
 
             // =====================================================================
@@ -538,12 +537,14 @@ Shader "Horizon/Procedural Skybox"
                 float h = heightFraction;
                 float horizFreq = CLOUD_NOISE_FREQ * _CloudScale;
 
-                float verticalBase = h * 0.7;
+                float verticalBase = h * 1.0;
                 float verticalOffset = sin(p.x * 0.00013) * cos(p.z * 0.00017) * 0.15;
+
+                float verticalDrift = _Time.y * 0.0003;
 
                 float3 noiseUVW = float3(
                     p.x * horizFreq + _CloudWind.x,
-                    verticalBase + verticalOffset,
+                    verticalBase + verticalOffset + verticalDrift,
                     p.z * horizFreq + _CloudWind.y
                 );
 
@@ -555,8 +556,9 @@ Shader "Horizon/Procedural Skybox"
 
                 // === HEIGHT + COVERAGE ===
                 float heightGrad = CloudHeightGradient(h, weather.type);
-                float shapedNoise = baseNoise * heightGrad;
-                float baseShape = DensityHeightRemap(shapedNoise, h, weather.macro);
+
+                float effectiveCoverage = weather.macro * heightGrad;
+                float baseShape = DensityHeightRemap(baseNoise, h, effectiveCoverage);
 
                 if (applyErosion && baseShape > 0.001)
                 {
@@ -564,9 +566,12 @@ Shader "Horizon/Procedural Skybox"
                                         * (1.0 - overcastBlend * 0.7);
                     float detailNoise = dot(noise3D.gba, float3(0.5, 0.3, 0.2));
 
+                    float topBlend = smoothstep(0.1, 0.4, h);
+                    float detailForErosion = lerp(detailNoise, 1.0 - detailNoise, topBlend);
+
                     float edgeFactor = smoothstep(0.0, 0.3, baseShape) 
                                     * smoothstep(0.8, 0.3, baseShape);
-                    float erosion = detailNoise * erosionStrength * edgeFactor;
+                    float erosion = detailForErosion * erosionStrength * edgeFactor;
                     baseShape = saturate(baseShape - erosion);
 
                     baseShape -= noise3D.a * _CloudWisp * 0.3 
@@ -851,11 +856,17 @@ Shader "Horizon/Procedural Skybox"
                             bool anyCloud = false;
                             float preThresh = 1.0 - _CloudCoverage - 0.2;
 
+                            float2 weatherDrift = float2(
+                                sin(_Time.y * 0.00008) * 0.04,
+                                cos(_Time.y * 0.00006) * 0.03
+                            );
+
                             [unroll]
                             for (int pre = 0; pre < 5; pre++)
                             {
                                 float3 prePos = startPos + direction * (rayLength * (float(pre) + 0.5) * 0.2);
-                                float2 preUV = prePos.xz * 0.000025 * _CloudScale + (_CloudWind * 0.1);
+                                float2 preUV = prePos.xz * 0.000025 * _CloudScale 
+                                            + (_CloudWind * 0.1) + weatherDrift;
                                 
                                 if (tex2Dlod(_WeatherMapTex, float4(preUV, 0, 0)).r > preThresh)
                                 {
@@ -926,7 +937,7 @@ Shader "Horizon/Procedural Skybox"
 
                                     // --- Level 2: weather-map pre-check ---
                                     float2 weatherUV = pos.xz * 0.000025 * _CloudScale
-                                                    + (_CloudWind * 0.1);
+                                                    + (_CloudWind * 0.1) + weatherDrift;
                                     float4 wData = tex2Dlod(_WeatherMapTex,
                                                             float4(weatherUV, 0, 0));
 
