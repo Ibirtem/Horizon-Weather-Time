@@ -83,6 +83,11 @@ namespace BlackHorizon.HorizonWeatherTime
         private int FogColorID;
         private int FogBlendID;
 
+        // Night Sky (Airglow)
+        private int AirglowIntensityID;
+        private int AirglowColorID;
+        private int AirglowHeightID;
+
         private void InitializeShaderIDs()
         {
             // Atmosphere
@@ -143,6 +148,11 @@ namespace BlackHorizon.HorizonWeatherTime
             FogBlendID = VRCShader.PropertyToID("_HorizonFogBlend");
 
             TransmittanceLUT_ID = VRCShader.PropertyToID("_TransmittanceLUT");
+
+            // Night Sky (Airglow)
+            AirglowIntensityID = VRCShader.PropertyToID("_AirglowIntensity");
+            AirglowColorID = VRCShader.PropertyToID("_AirglowColor");
+            AirglowHeightID = VRCShader.PropertyToID("_AirglowHeight");
 
             _areIDsInitialized = true;
         }
@@ -323,10 +333,10 @@ namespace BlackHorizon.HorizonWeatherTime
             if (rawX < 0.0) rawX += 100.0;
             double rawY = (utcSec * (double)windSpeed.y) % 100.0;
             if (rawY < 0.0) rawY += 100.0;
-            
+
             _currentCloudOffset.x = (float)rawX;
             _currentCloudOffset.y = (float)rawY;
-            
+
             float cloudTime = (float)(utcSec % 100000.0);
             _skyboxInstance.SetFloat(CloudTimeID, cloudTime);
 
@@ -358,7 +368,7 @@ namespace BlackHorizon.HorizonWeatherTime
             if (rawCirrusX < 0.0) rawCirrusX += 100.0;
             double rawCirrusY = (utcSec * (double)windSpeed.y) % 100.0;
             if (rawCirrusY < 0.0) rawCirrusY += 100.0;
-            
+
             _currentCirrusOffset.x = (float)rawCirrusX;
             _currentCirrusOffset.y = (float)rawCirrusY;
 
@@ -386,6 +396,20 @@ namespace BlackHorizon.HorizonWeatherTime
             {
                 _skyboxInstance.SetFloat(FogBlendID, 0f);
             }
+        }
+
+        /// <summary>
+        /// Updates night sky atmospheric emission (airglow).
+        /// All colors should be in linear space.
+        /// </summary>
+        public void UpdateNightSky(float airglowIntensity, Color airglowColor, float airglowHeightKm)
+        {
+            EnsureInitialized();
+            if (_skyboxInstance == null) return;
+
+            _skyboxInstance.SetFloat(AirglowIntensityID, airglowIntensity);
+            _skyboxInstance.SetColor(AirglowColorID, airglowColor);
+            _skyboxInstance.SetFloat(AirglowHeightID, airglowHeightKm);
         }
     }
 }

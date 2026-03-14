@@ -703,6 +703,8 @@ private void OnValidate()
                     sp.starsIntensity, sp.milkyWayIntensity,
                     sp.twinkleScale, sp.twinkleSpeed, sp.twinkleStrength);
 
+                _skyManager.UpdateNightSky(sp.airglowIntensity, sp.airglowColor, sp.airglowHeight);
+
                 // Clouds
                 if (cp != null)
                 {

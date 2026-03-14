@@ -18,6 +18,11 @@ Shader "Horizon/Procedural Skybox"
         [HideInInspector] _TwinkleSpeed ("Twinkle Speed", Float) = 0.004
         [HideInInspector] _TwinkleStrength ("Twinkle Strength", Range(0.0, 2.0)) = 0.8
 
+        [Header(Airglow)]
+        [HideInInspector] _AirglowIntensity ("Airglow Intensity", Float) = 0.0004
+        [HideInInspector] _AirglowColor ("Airglow Base Color", Color) = (0.4, 0.6, 0.3, 1.0)
+        [HideInInspector] _AirglowHeight ("Airglow Emission Altitude (km)", Float) = 90.0
+
         [Header(Moon)]
         [NoScaleOffset] _MoonTex ("Moon Texture", 2D) = "white" {}
         _MoonColor ("Moon Color", Color) = (0.85, 0.85, 0.8, 1)
@@ -101,6 +106,11 @@ Shader "Horizon/Procedural Skybox"
             float _TwinkleSharpness;
             float _TwinkleSpeed;
             float _TwinkleStrength;
+
+            // Airglow
+            float  _AirglowIntensity;
+            float4 _AirglowColor;
+            float  _AirglowHeight;
 
             // Moon
             sampler2D _MoonTex;
@@ -692,6 +702,43 @@ Shader "Horizon/Procedural Skybox"
                     spaceColor *= starReddening;
 
                     finalColor += spaceColor * starVisibility;
+                }
+
+                // =============================================================
+                //  2.5 AIRGLOW (Upper Atmosphere Chemiluminescence)
+                // =============================================================
+                if (_AirglowIntensity > 0.000001)
+                {
+                    float agCosZ = max(direction.y, 0.0);
+
+                    // --- Van Rhijn enhancement ---
+                    float agSinZSq = 1.0 - agCosZ * agCosZ;
+                    float agShellRadius = PLANET_GROUND_RADIUS + _AirglowHeight * 1000.0;
+                    float agShellRatio = PLANET_GROUND_RADIUS / agShellRadius;
+                    float agDenom = 1.0 - agShellRatio * agShellRatio * agSinZSq;
+                    float agVanRhijnRaw = 1.0 / sqrt(max(agDenom, 0.01));
+
+                    float agVanRhijn = 1.0 + saturate(agVanRhijnRaw - 1.0) * 0.25;
+
+                    // --- Atmospheric extinction below the emission layer ---
+                    float agS2 = agCosZ * agCosZ;
+                    float agS3 = agS2 * agCosZ;
+                    float agAirmass = (1.002432 * agS2 + 0.148386 * agCosZ + 0.0096467)
+                                    / (agS3 + 0.149864 * agS2 + 0.0102963 * agCosZ + 0.000303978);
+
+                    float3 agZenithTau = RAYLEIGH_BETA * RAYLEIGH_SCALE_HEIGHT;
+                    float3 agExtinction = exp(-agZenithTau * min(agAirmass, 40.0));
+
+                    // --- Combine ---
+                    float3 agEmission = _AirglowColor.rgb * _AirglowIntensity
+                                    * agVanRhijn * agExtinction;
+
+                    agEmission = min(agEmission, 0.002);
+                    
+                    agEmission *= smoothstep(-0.02, 0.02, direction.y);
+                    agEmission *= smoothstep(0.05, -0.12, sunHeight);
+
+                    finalColor += agEmission;
                 }
 
                 // =============================================================

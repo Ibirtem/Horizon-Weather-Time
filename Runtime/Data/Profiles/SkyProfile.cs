@@ -63,6 +63,18 @@ namespace BlackHorizon.HorizonWeatherTime
         [Range(0f, 2f)]
         public float twinkleStrength = 0.8f;
 
+        [Header("Night Sky (Airglow)")]
+        [Tooltip("Intensity of atmospheric chemiluminescence. Earth default ≈ 0.0004.")]
+        [Range(0f, 0.01f)]
+        public float airglowIntensity = 0.0004f;
+
+        [Tooltip("Base emission color (linear). Green O-line dominates on Earth.")]
+        public Color airglowColor = new Color(0.4f, 0.6f, 0.3f, 1f);
+
+        [Tooltip("Altitude of the emission layer in km. Earth ≈ 90 km.")]
+        [Range(30f, 300f)]
+        public float airglowHeight = 90f;
+
 #if UNITY_EDITOR
         private void OnValidate()
         {

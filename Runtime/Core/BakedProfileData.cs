@@ -61,6 +61,14 @@ namespace BlackHorizon.HorizonWeatherTime
         public float twinkleStrength = 0.8f;
 
         // =====================================================
+        // NIGHT SKY (AIRGLOW)
+        // =====================================================
+        [Header("Night Sky")]
+        public float airglowIntensity = 0.0004f;
+        public Color airglowColor = new Color(0.4f, 0.6f, 0.3f, 1f);
+        public float airglowHeight = 90f;
+
+        // =====================================================
         // MOON
         // =====================================================
         [Header("Moon")]
@@ -170,6 +178,10 @@ namespace BlackHorizon.HorizonWeatherTime
                 twinkleScale = sp.twinkleScale;
                 twinkleSpeed = sp.twinkleSpeed;
                 twinkleStrength = sp.twinkleStrength;
+
+                airglowIntensity = sp.airglowIntensity;
+                airglowColor = sp.airglowColor;
+                airglowHeight = sp.airglowHeight;
             }
 
             // ----- MOON -----
