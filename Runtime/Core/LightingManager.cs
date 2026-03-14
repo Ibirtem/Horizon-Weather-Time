@@ -97,6 +97,7 @@ namespace BlackHorizon.HorizonWeatherTime
             float moonTime,
             Color sunHorizon, Color sunZenith, float sunIntens,
             Color moonCol, float moonIntens,
+            float moonPhaseBrightness,
             Color daySky, Color nightSky)
         {
             float sunFactor = 0f;
@@ -108,11 +109,10 @@ namespace BlackHorizon.HorizonWeatherTime
             }
 
             Color sunContribution = Color.Lerp(sunHorizon, sunZenith, sunFactor) * (sunFactor * sunIntens);
-            Color moonContribution = moonCol * (1.0f - sunFactor) * moonIntens;
+            Color moonContribution = moonCol * (1.0f - sunFactor) * moonIntens * moonPhaseBrightness;
 
             Color totalLight = sunContribution + moonContribution;
 
-            // Clamp to avoid absolute darkness
             totalLight.r = Mathf.Max(totalLight.r, 0.05f);
             totalLight.g = Mathf.Max(totalLight.g, 0.05f);
             totalLight.b = Mathf.Max(totalLight.b, 0.05f);
@@ -131,6 +131,7 @@ namespace BlackHorizon.HorizonWeatherTime
             float moonTime,
             Color sunHorizon, Color sunZenith, float sunIntens,
             Color moonCol, float moonIntens,
+            float moonPhaseBrightness,
             Color daySky, Color dayEq, Color dayGrnd,
             Color nightSky, Color nightEq, Color nightGrnd)
         {
@@ -159,7 +160,7 @@ namespace BlackHorizon.HorizonWeatherTime
             float moonHeightFactor = Mathf.SmoothStep(0f, 1f, moonT);
             float moonDayDimming = 1.0f - dayFactor;
 
-            moonLight.intensity = moonHeightFactor * moonDayDimming * moonIntens;
+            moonLight.intensity = moonHeightFactor * moonDayDimming * moonIntens * moonPhaseBrightness;
             moonLight.color = moonCol;
 
             Color finalMoonVisualColor = moonCol * 2.0f;

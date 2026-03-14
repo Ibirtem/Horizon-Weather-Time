@@ -567,8 +567,12 @@ private void OnValidate()
             Vector3 moonDir = ComputeCelestialDirection(_moonTimeOfDay, moonDeclination, latitude);
             Quaternion moonLightRot = Quaternion.LookRotation(-moonDir);
 
+            float sunMoonDot = Vector3.Dot(sunDir, moonDir);
+            float moonPhaseFraction = Mathf.Clamp01(0.5f - 0.5f * sunMoonDot);
+            float moonPhaseBrightness = moonPhaseFraction * moonPhaseFraction * moonPhaseFraction;
+
             // --- DISPATCH TO MODULES ---
-            Color particleLightColor = ApplyLighting(sunLightRot, moonLightRot, lp);
+            Color particleLightColor = ApplyLighting(sunLightRot, moonLightRot, lp, moonPhaseBrightness);
             Color currentFogColor = ApplyFog(fp, lp);
             ApplySky(sp, cp, mp, fp, currentFogColor);
             ApplyEffects(ep, particleLightColor);
@@ -610,13 +614,15 @@ private void OnValidate()
         /// Applies the calculated celestial rotations and active lighting profile data.
         /// Calculates the final directional and ambient light colors.
         /// </summary>
-        private Color ApplyLighting(Quaternion sunRotation, Quaternion moonRotation, BakedProfileData lp)
+        private Color ApplyLighting(Quaternion sunRotation, Quaternion moonRotation,
+            BakedProfileData lp, float moonPhaseBrightness)
         {
             _lightingManager.UpdateLighting(
                 sunRotation, moonRotation,
                 _sunTimeOfDay, _moonTimeOfDay,
                 lp.sunColorHorizon, lp.sunColorZenith, lp.sunIntensity,
                 lp.moonLightColor, lp.moonLightIntensity,
+                moonPhaseBrightness,
                 lp.daySkyColor, lp.dayEquatorColor, lp.dayGroundColor,
                 lp.nightSkyColor, lp.nightEquatorColor, lp.nightGroundColor
             );
@@ -625,6 +631,7 @@ private void OnValidate()
                 _sunTimeOfDay, _moonTimeOfDay,
                 lp.sunColorHorizon, lp.sunColorZenith, lp.sunIntensity,
                 lp.moonLightColor, lp.moonLightIntensity,
+                moonPhaseBrightness,
                 lp.daySkyColor, lp.nightSkyColor
             );
         }

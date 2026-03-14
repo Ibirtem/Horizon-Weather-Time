@@ -774,6 +774,9 @@ Shader "Horizon/Procedural Skybox"
                 float moonPhaseAngleCos = clamp(-moonLightDir.z, -1.0, 1.0);
                 float moonPhaseAngle    = acos(moonPhaseAngleCos);
 
+                float moonPhaseFraction = saturate(0.5 - 0.5 * dot(i.sunDirection, moonDir));
+                float moonPhaseBrightness = moonPhaseFraction * moonPhaseFraction * moonPhaseFraction;
+
                 if (dot(direction, moonDir) > 0.0)
                 {
                     float r2 = dot(moonPlanarUV, moonPlanarUV);
@@ -837,12 +840,10 @@ Shader "Horizon/Procedural Skybox"
                     }
 
                     // ---- Lunar halo / glare ----
-                    float illuminatedFraction = (1.0 + moonPhaseAngleCos) * 0.5;
-
                     float moonAngularDist = acos(clamp(dot(direction, moonDir), -1.0, 1.0));
                     float moonHalo = exp(-moonAngularDist * moonAngularDist * 3000.0) * 0.04
                                 + exp(-moonAngularDist * 60.0) * 0.008;
-                    moonHalo *= illuminatedFraction;
+                    moonHalo *= moonPhaseBrightness;
 
                     float moonHaloVisibility = smoothstep(-0.05, 0.1, dot(moonDir, up));
                     float3 moonHaloColor = _MoonColor.rgb * LUNAR_DUST_TINT
@@ -853,9 +854,6 @@ Shader "Horizon/Procedural Skybox"
                 // =============================================================
                 //  3.5 CIRRUS CLOUDS
                 // =============================================================
-
-                float moonPhaseFraction = saturate(0.5 - 0.5 * dot(i.sunDirection, moonDir));
-                float moonPhaseBrightness = moonPhaseFraction * moonPhaseFraction * moonPhaseFraction;
 
                 if (direction.y > 0.01 && _CirrusOpacity > 0.005 && _CirrusCoverage > 0.005)
                 {
