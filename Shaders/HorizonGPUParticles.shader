@@ -9,6 +9,7 @@ Shader "Horizon/GPU Particles"
         [Header(Volume Settings)]
         _HorizonBounds ("Volume Size (XYZ)", Vector) = (40, 40, 40, 0)
         _HorizonParticleSize ("Particle Size", Float) = 0.03
+        _Stretch ("Vertical Stretch", Float) = 1.0
         _HorizonDensity ("Density (0 to 1)", Range(0.0, 1.0)) = 1.0
 
         [Header(Occlusion)]
@@ -67,6 +68,7 @@ Shader "Horizon/GPU Particles"
             
             float3 _HorizonBounds;
             float _HorizonParticleSize;
+            float _Stretch;
             float _HorizonDensity;
             float3 _Wind;
 
@@ -122,14 +124,28 @@ Shader "Horizon/GPU Particles"
                     }
                 }
 
-                float3 viewRight = UNITY_MATRIX_V[0].xyz;
-                float3 viewUp = UNITY_MATRIX_V[1].xyz;
+                float windLen = length(_Wind);
+                float3 fallDir = windLen > 0.001 ? (_Wind / windLen) : float3(0, -1, 0);
                 
+                float3 camToParticle = normalize(particleWorldCenter - camPos);
+
+                float3 sideDir = cross(fallDir, camToParticle);
+                float sideLen = length(sideDir);
+                
+                if (sideLen < 0.001) 
+                {
+                    sideDir = float3(1, 0, 0);
+                } 
+                else 
+                {
+                    sideDir /= sideLen;
+                }
+
                 float2 quadOffset = v.uv0 - 0.5;
                 
-                float3 vertexWorldPos = particleWorldCenter + 
-                                       (viewRight * quadOffset.x + viewUp * quadOffset.y) * 
-                                       _HorizonParticleSize;
+                float3 vertexWorldPos = particleWorldCenter 
+                                      + sideDir * quadOffset.x * _HorizonParticleSize 
+                                      + fallDir * quadOffset.y * _HorizonParticleSize * _Stretch;
 
                 o.vertex = mul(UNITY_MATRIX_VP, float4(vertexWorldPos, 1.0));
                 

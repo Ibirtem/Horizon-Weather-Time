@@ -823,17 +823,34 @@ namespace BlackHorizon.HorizonWeatherTime
 
         private void CheckAndConfigureParticleAssets()
         {
-            Texture2D snowTex = EnsureSnowflakeTexture();
             Mesh particleMesh = EnsureParticleMesh();
-            Material particleMat = EnsureParticleMaterial(snowTex);
+
+            Texture2D snowTex = EnsureSnowflakeTexture();
+            Vector4 snowWind = new Vector4(1f, -1.5f, 0.5f, 0f);
+            Material snowMat = EnsureParticleMaterial(
+                snowTex, "SnowParticle_Lit_Material.mat",
+                stretch: 1.0f, defaultWind: snowWind,
+                color: new Color(1f, 1f, 1f, 0.9f),
+                particleSize: 0.03f);
+            UpdateEffectPrefab("SnowEffect", particleMesh, snowMat);
+
+            Texture2D rainTex = EnsureRaindropTexture();
+            Vector4 rainWind = new Vector4(0.5f, -12.0f, 0.2f, 0f);
+            Material rainMat = EnsureParticleMaterial(
+                rainTex, "RainParticle_Lit_Material.mat",
+                stretch: 5.0f, defaultWind: rainWind,
+                color: new Color(0.7f, 0.78f, 0.88f, 0.3f),
+                particleSize: 0.015f);
+            UpdateEffectPrefab("RainEffect", particleMesh, rainMat);
 
             if (_weatherEffectsManagerProp.objectReferenceValue != null)
             {
                 var manager = (WeatherEffectsManager)_weatherEffectsManagerProp.objectReferenceValue;
-                ConfigureEffectsManagerInstance(manager, particleMesh, particleMat);
+                if (manager.particleRenderer == null)
+                {
+                    ConfigureEffectsManagerInstance(manager, particleMesh, snowMat);
+                }
             }
-
-            UpdateSnowPrefab(particleMesh, particleMat);
         }
 
         // --- SUB-FUNCTIONS ---
@@ -885,9 +902,12 @@ namespace BlackHorizon.HorizonWeatherTime
             return mesh;
         }
 
-        private Material EnsureParticleMaterial(Texture2D texture)
+        private Material EnsureParticleMaterial(
+            Texture2D texture, string matName,
+            float stretch, Vector4 defaultWind,
+            Color color, float particleSize)
         {
-            string matPath = "Assets/Horizon Weather & Time/Materials/SnowParticle_Lit_Material.mat";
+            string matPath = $"Assets/Horizon Weather & Time/Materials/{matName}";
             Material mat = AssetDatabase.LoadAssetAtPath<Material>(matPath);
             Shader shader = Shader.Find("Horizon/GPU Particles");
 
@@ -901,6 +921,10 @@ namespace BlackHorizon.HorizonWeatherTime
             {
                 mat = new Material(shader);
                 mat.SetTexture("_MainTex", texture);
+                mat.SetFloat("_Stretch", stretch);
+                mat.SetVector("_Wind", defaultWind);
+                mat.SetColor("_Color", color);
+                mat.SetFloat("_HorizonParticleSize", particleSize);
 
                 string dir = Path.GetDirectoryName(matPath);
                 if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
@@ -909,14 +933,116 @@ namespace BlackHorizon.HorizonWeatherTime
             }
             else
             {
-                if (mat.shader != shader) mat.shader = shader;
-                if (mat.GetTexture("_MainTex") != texture)
-                {
-                    mat.SetTexture("_MainTex", texture);
-                    EditorUtility.SetDirty(mat);
-                }
+                bool isDirty = false;
+                if (mat.shader != shader) { mat.shader = shader; isDirty = true; }
+                if (mat.GetTexture("_MainTex") != texture) { mat.SetTexture("_MainTex", texture); isDirty = true; }
+                if (!Mathf.Approximately(mat.GetFloat("_Stretch"), stretch)) { mat.SetFloat("_Stretch", stretch); isDirty = true; }
+                if (!Mathf.Approximately(mat.GetFloat("_HorizonParticleSize"), particleSize)) { mat.SetFloat("_HorizonParticleSize", particleSize); isDirty = true; }
+                if (mat.GetColor("_Color") != color) { mat.SetColor("_Color", color); isDirty = true; }
+                if (mat.GetVector("_Wind").y == 0f) { mat.SetVector("_Wind", defaultWind); isDirty = true; }
+
+                if (isDirty) EditorUtility.SetDirty(mat);
             }
             return mat;
+        }
+
+        private void UpdateEffectPrefab(string prefabName, Mesh mesh, Material mat)
+        {
+            string dir = "Assets/Horizon Weather & Time/Resources/Prefabs";
+            if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+
+            string path = $"{dir}/{prefabName}.prefab";
+            GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(path);
+
+            GameObject tempObj = null;
+            if (prefab == null)
+            {
+                tempObj = new GameObject(prefabName);
+                prefab = PrefabUtility.SaveAsPrefabAsset(tempObj, path);
+                DestroyImmediate(tempObj);
+            }
+
+            using (var editingScope = new PrefabUtility.EditPrefabContentsScope(path))
+            {
+                var root = editingScope.prefabContentsRoot;
+
+                var oldPs = root.GetComponent<ParticleSystem>();
+                if (oldPs != null) { DestroyImmediate(oldPs, true); }
+
+                var mf = root.GetComponent<MeshFilter>();
+                if (mf == null) mf = root.AddComponent<MeshFilter>();
+                mf.sharedMesh = mesh;
+
+                var mr = root.GetComponent<MeshRenderer>();
+                if (mr == null) mr = root.AddComponent<MeshRenderer>();
+                mr.sharedMaterial = mat;
+
+                mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                mr.receiveShadows = false;
+                mr.lightProbeUsage = UnityEngine.Rendering.LightProbeUsage.Off;
+            }
+        }
+
+        private Texture2D EnsureRaindropTexture()
+        {
+            string texPath = "Assets/Horizon Weather & Time/Textures/Horizon_Raindrop_v1.png";
+            Texture2D tex = AssetDatabase.LoadAssetAtPath<Texture2D>(texPath);
+
+            if (tex == null)
+            {
+                if (!Directory.Exists("Assets/Horizon Weather & Time/Textures"))
+                    Directory.CreateDirectory("Assets/Horizon Weather & Time/Textures");
+
+                tex = GenerateRealisticRaindrop(64);
+
+                File.WriteAllBytes(texPath, tex.EncodeToPNG());
+                AssetDatabase.Refresh();
+
+                TextureImporter importer = AssetImporter.GetAtPath(texPath) as TextureImporter;
+                if (importer != null)
+                {
+                    importer.alphaIsTransparency = true;
+                    importer.alphaSource = TextureImporterAlphaSource.FromInput;
+                    importer.wrapMode = TextureWrapMode.Clamp;
+                    importer.filterMode = FilterMode.Bilinear;
+                    importer.mipmapEnabled = true;
+                    importer.textureCompression = TextureImporterCompression.Uncompressed;
+                    importer.SaveAndReimport();
+                }
+                tex = AssetDatabase.LoadAssetAtPath<Texture2D>(texPath);
+            }
+            return tex;
+        }
+
+        private static Texture2D GenerateRealisticRaindrop(int resolution)
+        {
+            Texture2D tex = new Texture2D(resolution, resolution, TextureFormat.ARGB32, false);
+            Color[] pixels = new Color[resolution * resolution];
+            float invRes = 1.0f / (resolution - 1);
+
+            for (int y = 0; y < resolution; y++)
+            {
+                for (int x = 0; x < resolution; x++)
+                {
+                    float u = (x * invRes) * 2.0f - 1.0f;
+                    float v = (y * invRes) * 2.0f - 1.0f;
+
+                    float dist = Mathf.Sqrt(u * u + v * v);
+                    float alpha = 1.0f - Mathf.SmoothStep(0.1f, 0.8f, dist);
+
+                    if (alpha < 0.005f)
+                    {
+                        pixels[y * resolution + x] = Color.clear;
+                        continue;
+                    }
+
+                    pixels[y * resolution + x] = new Color(alpha, alpha, alpha, alpha);
+                }
+            }
+
+            tex.SetPixels(pixels);
+            tex.Apply();
+            return tex;
         }
 
         private void ConfigureEffectsManagerInstance(WeatherEffectsManager manager, Mesh mesh, Material mat)
@@ -951,32 +1077,6 @@ namespace BlackHorizon.HorizonWeatherTime
             {
                 manager.particleRenderer = mr;
                 EditorUtility.SetDirty(manager);
-            }
-        }
-
-        private void UpdateSnowPrefab(Mesh mesh, Material mat)
-        {
-            var prefab = Resources.Load<GameObject>("Prefabs/SnowEffect");
-            if (prefab != null)
-            {
-                bool changed = false;
-
-                var oldPs = prefab.GetComponentInChildren<ParticleSystem>();
-                if (oldPs != null) { DestroyImmediate(oldPs.gameObject, true); changed = true; }
-
-                var mf = prefab.GetComponent<MeshFilter>();
-                if (mf == null) { mf = prefab.AddComponent<MeshFilter>(); changed = true; }
-                if (mf.sharedMesh != mesh) { mf.sharedMesh = mesh; changed = true; }
-
-                var mr = prefab.GetComponent<MeshRenderer>();
-                if (mr == null) { mr = prefab.AddComponent<MeshRenderer>(); changed = true; }
-                if (mr.sharedMaterial != mat) { mr.sharedMaterial = mat; changed = true; }
-
-                mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-                mr.receiveShadows = false;
-                mr.lightProbeUsage = UnityEngine.Rendering.LightProbeUsage.Off;
-
-                if (changed) EditorUtility.SetDirty(prefab);
             }
         }
 
