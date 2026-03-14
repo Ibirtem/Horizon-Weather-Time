@@ -186,6 +186,10 @@ Shader "Horizon/Procedural Skybox"
             // --- Sun ---
             #define SUN_ANGULAR_COS 0.99998
 
+            // --- Lunar Surface ---
+            static const float3 LUNAR_DUST_TINT = float3(0.92, 0.79, 0.64);
+            static const float3 EARTHSHINE_TINT = float3(0.88, 0.96, 1.0);
+
             // --- Atmosphere Integration ---
             #define ATMOSPHERE_STEPS 16
 
@@ -743,20 +747,32 @@ Shader "Horizon/Procedural Skybox"
 
                 // =============================================================
                 //  3. MOON
-                //  Dynamic phase from Sun-Moon geometry.
-                //  Atmospheric extinction reddens the moon near horizon.
                 // =============================================================
 
                 float3 moonDir = normalize(_MoonPosition);
 
-                // Stable tangent frame (avoids singularity at zenith)
                 float3 moonRight = normalize(cross(
                     abs(moonDir.y) > 0.999 ? float3(1,0,0) : float3(0,1,0),
                     moonDir
                 ));
                 float3 moonUp = cross(moonDir, moonRight);
 
-                float2 moonPlanarUV = float2(dot(direction, moonRight), dot(direction, moonUp)) / _MoonSize;
+                float2 moonPlanarUV = float2(
+                    dot(direction, moonRight),
+                    dot(direction, moonUp)
+                ) / _MoonSize;
+
+                float3 sunInMoonSpace = float3(
+                    dot(i.sunDirection, moonRight),
+                    dot(i.sunDirection, moonUp),
+                    dot(i.sunDirection, moonDir)
+                );
+                float3 moonLightDir = normalize(sunInMoonSpace);
+
+                // Sun behind viewer (full moon): moonLightDir.z ≈ -1 → angle ≈ 0
+                // Sun same side    (new moon):   moonLightDir.z ≈ +1 → angle ≈ π
+                float moonPhaseAngleCos = clamp(-moonLightDir.z, -1.0, 1.0);
+                float moonPhaseAngle    = acos(moonPhaseAngleCos);
 
                 if (dot(direction, moonDir) > 0.0)
                 {
@@ -772,46 +788,70 @@ Shader "Horizon/Procedural Skybox"
                         );
                         float4 moonTex = tex2Dlod(_MoonTex, float4(sphUV, 0, 0));
 
-                        float3 sunInMoonSpace = float3(
-                            dot(i.sunDirection, moonRight),
-                            dot(i.sunDirection, moonUp),
-                            dot(i.sunDirection, moonDir)
-                        );
-                        float phaseDot = dot(
-                            float3(sphereNormal.xy, -sphereNormal.z),
-                            normalize(sunInMoonSpace)
-                        );
-                        float phaseIllumination = smoothstep(-0.01, 0.05, phaseDot);
+                        // ---- Surface normal in moonDir-aligned space ----
+                        float3 moonN = float3(sphereNormal.xy, -sphereNormal.z);
 
-                        float earthshine = 0.003 * (1.0 - phaseIllumination);
-                        float moonLighting = phaseIllumination + earthshine;
+                        float cosI = dot(moonN, moonLightDir);
+                        float cosR = z;
 
+                        // ---- Lommel-Seeliger BRDF ----
+                        float moonLS = 0.0;
+                        if (cosI > 0.0)
+                        {
+                            moonLS = cosI / (cosI + cosR + 0.0001);
+                            moonLS *= smoothstep(-0.02, 0.04, cosI);
+                        }
+
+                        // ---- Opposition surge ----
+                        float oppositionSurge = 1.0 + 0.5
+                            * exp(-moonPhaseAngle * moonPhaseAngle * 80.0);
+                        moonLS *= oppositionSurge;
+
+                        // ---- Earthshine ----
+                        float phi = moonPhaseAngle;
+                        float earthshineEm = max(0.0,
+                            -0.0061 * phi*phi*phi
+                        +  0.0289 * phi*phi
+                        -  0.0105 * sin(phi));
+
+                        float3 earthshineContrib = EARTHSHINE_TINT * earthshineEm;
+
+                        // ---- Combine surface reflectance ----
+                        float3 moonAlbedo = moonTex.rgb * _MoonColor.rgb * LUNAR_DUST_TINT;
+                        float3 moonLit = moonAlbedo * (moonLS + earthshineContrib);
+
+                        // ---- Atmospheric extinction ----
                         float moonAltAngle = dot(moonDir, up);
                         float moonExtPath  = 1.0 / max(moonAltAngle, 0.035);
-                        float3 moonAtmosTint = exp(-RAYLEIGH_BETA * RAYLEIGH_SCALE_HEIGHT * min(moonExtPath, 40.0));
+                        float3 moonAtmosTint = exp(-RAYLEIGH_BETA * RAYLEIGH_SCALE_HEIGHT
+                                                * min(moonExtPath, 40.0));
 
-                        float moonBrightness = 0.05 * smoothstep(-0.05, 0.15, moonAltAngle);
+                        // ---- Final brightness + horizon visibility ----
+                        float moonBrightness = 0.08 * smoothstep(-0.05, 0.15, moonAltAngle);
 
-                        float3 moonVisual = moonTex.rgb * _MoonColor.rgb * moonLighting * moonBrightness * moonAtmosTint;
+                        float3 moonVisual = moonLit * moonBrightness * moonAtmosTint;
                         float  moonAlpha  = smoothstep(1.0, 0.92, r2) * moonTex.a * _MoonColor.a;
 
                         float3 moonComposite = max(finalColor, moonVisual);
                         finalColor = lerp(finalColor, moonComposite, moonAlpha);
                     }
 
-                    // Lunar halo
+                    // ---- Lunar halo / glare ----
+                    float illuminatedFraction = (1.0 + moonPhaseAngleCos) * 0.5;
+
                     float moonAngularDist = acos(clamp(dot(direction, moonDir), -1.0, 1.0));
                     float moonHalo = exp(-moonAngularDist * moonAngularDist * 3000.0) * 0.04
-                                   + exp(-moonAngularDist * 60.0) * 0.008;
+                                + exp(-moonAngularDist * 60.0) * 0.008;
+                    moonHalo *= illuminatedFraction;
+
                     float moonHaloVisibility = smoothstep(-0.05, 0.1, dot(moonDir, up));
-                    float3 moonHaloColor = _MoonColor.rgb * moonHalo * moonHaloVisibility * 0.01;
+                    float3 moonHaloColor = _MoonColor.rgb * LUNAR_DUST_TINT
+                                        * moonHalo * moonHaloVisibility * 0.01;
                     finalColor += moonHaloColor;
                 }
 
                 // =============================================================
-                //  3.5 CIRRUS CLOUDS (2D High-Altitude Ice Layer)
-                //  Simulates Cirrus uncinus/fibratus using a multi-layered 2D texture.
-                //  Includes self-shadowing approximations and basic forward scattering.
+                //  3.5 CIRRUS CLOUDS
                 // =============================================================
 
                 float moonPhaseBrightness = saturate(0.5 - 0.5 * dot(i.sunDirection, moonDir));
