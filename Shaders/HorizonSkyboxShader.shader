@@ -854,8 +854,8 @@ Shader "Horizon/Procedural Skybox"
                 //  3.5 CIRRUS CLOUDS
                 // =============================================================
 
-                float moonPhaseBrightness = saturate(0.5 - 0.5 * dot(i.sunDirection, moonDir));
-                moonPhaseBrightness *= moonPhaseBrightness;
+                float moonPhaseFraction = saturate(0.5 - 0.5 * dot(i.sunDirection, moonDir));
+                float moonPhaseBrightness = moonPhaseFraction * moonPhaseFraction * moonPhaseFraction;
 
                 if (direction.y > 0.01 && _CirrusOpacity > 0.005 && _CirrusCoverage > 0.005)
                 {
@@ -1009,7 +1009,7 @@ Shader "Horizon/Procedural Skybox"
                                 float3 dayAmbient   = lerp(_CloudShadowColor.rgb * 0.5,
                                                         atmosphereTint, 0.4) * 0.3;
                                 float3 nightAmbient = _CloudShadowColor.rgb
-                                                    * lerp(0.001, 0.003, moonPhaseBrightness);
+                                                    * lerp(0.0004, 0.0012, moonPhaseBrightness);
                                 float3 activeAmbient = lerp(nightAmbient, dayAmbient, sunWeight);
 
                                 float cloudCosTheta = dot(direction, mainLightDir);
@@ -1129,7 +1129,7 @@ Shader "Horizon/Procedural Skybox"
                                         saturate(cloudCosTheta * 0.5 + 0.5));
                                     float beerPowder = beerTerm
                                         * lerp(1.0, powderTerm * 2.0, powderWeight);
-                                    float nightBeer = lerp(beerPowder, 0.2, 0.3);
+                                    float nightBeer = lerp(beerPowder, 0.1, 0.5);
                                     beerPowder = lerp(nightBeer, beerPowder, sunWeight);
 
                                     // ---- Ambient from height ----
