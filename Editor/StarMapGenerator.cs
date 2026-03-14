@@ -30,6 +30,10 @@ namespace BlackHorizon.HorizonWeatherTime
         private float _brightnessExp = 2.2f;
         private bool _saveAsEXR = true;
 
+        [Header("Star Color Tuning")]
+        [Range(0f, 3f)] private float _colorSaturation = 1.0f;
+        [Range(-0.5f, 0.5f)] private float _colorTemperatureShift = 0.0f;
+
         [Header("Adjustments")]
         [Range(0f, 1f)] private float _horizontalShift = 0.5f;
         private bool _mirrorHorizontal = true;
@@ -109,6 +113,11 @@ namespace BlackHorizon.HorizonWeatherTime
             _starSize = EditorGUILayout.Slider("Max Star Size (Px)", _starSize, 1.0f, 10.0f);
             _brightnessExp = EditorGUILayout.Slider("Gamma Contrast", _brightnessExp, 1.0f, 5.0f);
             _saveAsEXR = EditorGUILayout.Toggle("Save as EXR (HDR)", _saveAsEXR);
+
+            EditorGUILayout.Space();
+            GUILayout.Label("Star Color Tuning", EditorStyles.boldLabel);
+            _colorSaturation = EditorGUILayout.Slider("Color Saturation", _colorSaturation, 0f, 3f);
+            _colorTemperatureShift = EditorGUILayout.Slider("Temperature Shift (B-V)", _colorTemperatureShift, -0.5f, 0.5f);
 
             EditorGUILayout.Space();
             GUILayout.Label("Constellation Lines", EditorStyles.boldLabel);
@@ -252,6 +261,8 @@ namespace BlackHorizon.HorizonWeatherTime
                     if (!float.TryParse(cols[7], NumberStyles.Any, CultureInfo.InvariantCulture, out float ra)) continue;
                     if (!float.TryParse(cols[8], NumberStyles.Any, CultureInfo.InvariantCulture, out float dec)) continue;
 
+                    if (mag < -2.0f) continue;
+
                     float ci = 0.0f;
                     if (!string.IsNullOrEmpty(cols[16]))
                         float.TryParse(cols[16], NumberStyles.Any, CultureInfo.InvariantCulture, out ci);
@@ -263,7 +274,8 @@ namespace BlackHorizon.HorizonWeatherTime
 
                     float visualIntensity = Mathf.Pow(Mathf.Max(0, (_magThreshold - mag) / _magThreshold), _brightnessExp);
                     float radius = Mathf.Lerp(0.8f, _starSize, visualIntensity);
-                    Color starColor = BVToRGB(ci) * visualIntensity * hdrMult;
+                    Color baseStarColor = BVToRGB(ci + _colorTemperatureShift);
+                    Color starColor = AdjustStarSaturation(baseStarColor, _colorSaturation) * visualIntensity * hdrMult;
 
                     if (_useCubemap)
                     {
@@ -322,20 +334,23 @@ namespace BlackHorizon.HorizonWeatherTime
             int r = Mathf.CeilToInt(radius + 1);
             float rSqBase = radius * radius;
 
-            for (int dy = -r; dy <= r; dy++)
+            int xMin = Mathf.Max(0, Mathf.FloorToInt(pxCenter - r));
+            int xMax = Mathf.Min(texW - 1, Mathf.CeilToInt(pxCenter + r));
+            int yMin = Mathf.Max(0, Mathf.FloorToInt(pyCenter - r));
+            int yMax = Mathf.Min(texH - 1, Mathf.CeilToInt(pyCenter + r));
+
+            for (int py = yMin; py <= yMax; py++)
             {
-                for (int dx = -r; dx <= r; dx++)
+                float dy = py - pyCenter;
+                for (int px = xMin; px <= xMax; px++)
                 {
-                    int x = Mathf.RoundToInt(pxCenter + dx);
-                    int y = Mathf.RoundToInt(pyCenter + dy);
-
-                    if (x < 0 || x >= texW || y < 0 || y >= texH) continue;
-
+                    float dx = px - pxCenter;
                     float distSq = dx * dx + dy * dy;
+
                     if (distSq <= rSqBase * 4.0f)
                     {
                         float alpha = Mathf.Exp(-distSq / (rSqBase * 0.5f + 0.0001f));
-                        pixels[y * texW + x] += color * alpha;
+                        pixels[py * texW + px] += color * alpha;
                     }
                 }
             }
@@ -1534,6 +1549,22 @@ namespace BlackHorizon.HorizonWeatherTime
             else b = 138.5177312231f * Mathf.Log(temp - 10) - 305.0447927307f;
 
             return new Color(Mathf.Clamp01(r / 255f), Mathf.Clamp01(g / 255f), Mathf.Clamp01(b / 255f), 1.0f);
+        }
+
+        /// <summary>
+        /// Adjusts the saturation of a star color by lerping between
+        /// its perceptual luminance (grayscale) and the original color.
+        /// Values > 1 boost saturation, < 1 desaturate.
+        /// </summary>
+        private Color AdjustStarSaturation(Color color, float saturation)
+        {
+            float gray = 0.2126f * color.r + 0.7152f * color.g + 0.0722f * color.b;
+            return new Color(
+                Mathf.Max(0f, Mathf.LerpUnclamped(gray, color.r, saturation)),
+                Mathf.Max(0f, Mathf.LerpUnclamped(gray, color.g, saturation)),
+                Mathf.Max(0f, Mathf.LerpUnclamped(gray, color.b, saturation)),
+                1.0f
+            );
         }
 
         private void SaveTexture(Texture2D tex)
