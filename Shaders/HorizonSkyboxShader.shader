@@ -29,6 +29,8 @@ Shader "Horizon/Procedural Skybox"
         [NoScaleOffset] _BlueNoiseTex ("Blue Noise (R)", 2D) = "black" {}
         [NoScaleOffset] _WeatherMapTex ("Weather Map (RGBA)", 2D) = "black" {}
         [NoScaleOffset] _CurlNoiseTex ("Curl Noise (RG)", 2D) = "gray" {}
+
+        [HideInInspector] _CloudTime ("Cloud Time (UTC)", Float) = 0.0
         
         _CloudColor ("Cloud Lit Color", Color) = (0.9, 0.9, 0.9, 1)
         _CloudShadowColor ("Cloud Shadow Color", Color) = (0.3, 0.3, 0.35, 1)
@@ -121,6 +123,8 @@ Shader "Horizon/Procedural Skybox"
             float     _CloudWisp;
             float     _CloudScatter;
             float2    _CloudWind;
+
+            float     _CloudTime;
 
             // Cirrus Clouds
             sampler2D _CirrusTex;
@@ -549,7 +553,7 @@ Shader "Horizon/Procedural Skybox"
                 float verticalBase = h * CLOUD_VERTICAL_SCALE; 
                 float verticalOffset = sin(p.x * 0.00013) * cos(p.z * 0.00017) * 0.15;
 
-                float verticalDrift = _Time.y * 0.0003;
+                float verticalDrift = _CloudTime * 0.0003;
 
                 float2 curlUV = p.xz * CLOUD_CURL_UV_SCALE + _CloudWind * 0.05;
                 float2 curlOffset = tex2Dlod(_CurlNoiseTex, float4(curlUV, 0, 0)).rg 
@@ -876,8 +880,8 @@ Shader "Horizon/Procedural Skybox"
                             float preThresh = 1.0 - _CloudCoverage - 0.2;
 
                             float2 weatherDrift = float2(
-                                sin(_Time.y * 0.00008) * 0.04,
-                                cos(_Time.y * 0.00006) * 0.03
+                                sin(_CloudTime * 0.00008) * 0.04,
+                                cos(_CloudTime * 0.00006) * 0.03
                             );
 
                             [unroll]

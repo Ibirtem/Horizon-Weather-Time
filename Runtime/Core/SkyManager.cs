@@ -77,6 +77,8 @@ namespace BlackHorizon.HorizonWeatherTime
         private Texture _currentCirrusTexture;
         private Vector2 _currentCirrusOffset;
 
+        private int CloudTimeID;
+
         // Fog
         private int FogColorID;
         private int FogBlendID;
@@ -123,6 +125,8 @@ namespace BlackHorizon.HorizonWeatherTime
             CloudDetailID = VRCShader.PropertyToID("_CloudDetail");
             CloudWispID = VRCShader.PropertyToID("_CloudWisp");
             CloudScatterID = VRCShader.PropertyToID("_CloudScatter");
+
+            CloudTimeID = VRCShader.PropertyToID("_CloudTime");
 
             CirrusTexID = VRCShader.PropertyToID("_CirrusTex");
             CirrusCoverageID = VRCShader.PropertyToID("_CirrusCoverage");
@@ -208,6 +212,13 @@ namespace BlackHorizon.HorizonWeatherTime
                 _skyboxInstance = null;
             }
             _areIDsInitialized = false;
+        }
+
+        private double GetUtcSeconds()
+        {
+            System.DateTime now = System.DateTime.UtcNow;
+            System.DateTime epoch = new System.DateTime(2024, 1, 1, 0, 0, 0, System.DateTimeKind.Utc);
+            return (now - epoch).TotalSeconds;
         }
 
         public void UpdateSky(Vector3 sunDirection, float rayleigh, float turbidity, float mieCoeff, float mieG, float exposure)
@@ -304,13 +315,20 @@ namespace BlackHorizon.HorizonWeatherTime
             if (weatherMapTex != null) _skyboxInstance.SetTexture(WeatherMapTexID, weatherMapTex);
             if (blueNoiseTex != null) _skyboxInstance.SetTexture(BlueNoiseTexID, blueNoiseTex);
 
-#if !COMPILER_UDONSHARP && UNITY_EDITOR
-            if (Application.isPlaying) { _currentCloudOffset += windSpeed * Time.deltaTime; }
-#else
-            _currentCloudOffset += windSpeed * Time.deltaTime;
-#endif
-            if (_currentCloudOffset.x > 100f) _currentCloudOffset.x -= 100f;
-            if (_currentCloudOffset.y > 100f) _currentCloudOffset.y -= 100f;
+            // TODO
+            // Every 27.7 hours, a cycle occurs, ending with a 0.04 UV jump.
+            // It's unnoticeable and not critical, but it's worth remembering to do something about it.
+            double utcSec = GetUtcSeconds();
+            double rawX = (utcSec * (double)windSpeed.x) % 100.0;
+            if (rawX < 0.0) rawX += 100.0;
+            double rawY = (utcSec * (double)windSpeed.y) % 100.0;
+            if (rawY < 0.0) rawY += 100.0;
+            
+            _currentCloudOffset.x = (float)rawX;
+            _currentCloudOffset.y = (float)rawY;
+            
+            float cloudTime = (float)(utcSec % 100000.0);
+            _skyboxInstance.SetFloat(CloudTimeID, cloudTime);
 
             _skyboxInstance.SetVector(CloudWindID, _currentCloudOffset);
             _skyboxInstance.SetFloat(CloudAltitudeID, altitude);
@@ -335,13 +353,14 @@ namespace BlackHorizon.HorizonWeatherTime
                 _currentCirrusTexture = cirrusTex;
             }
 
-#if !COMPILER_UDONSHARP && UNITY_EDITOR
-            if (Application.isPlaying) { _currentCirrusOffset += windSpeed * Time.deltaTime; }
-#else
-            _currentCirrusOffset += windSpeed * Time.deltaTime;
-#endif
-            if (_currentCirrusOffset.x > 100f) _currentCirrusOffset.x -= 100f;
-            if (_currentCirrusOffset.y > 100f) _currentCirrusOffset.y -= 100f;
+            double utcSec = GetUtcSeconds();
+            double rawCirrusX = (utcSec * (double)windSpeed.x) % 100.0;
+            if (rawCirrusX < 0.0) rawCirrusX += 100.0;
+            double rawCirrusY = (utcSec * (double)windSpeed.y) % 100.0;
+            if (rawCirrusY < 0.0) rawCirrusY += 100.0;
+            
+            _currentCirrusOffset.x = (float)rawCirrusX;
+            _currentCirrusOffset.y = (float)rawCirrusY;
 
             _skyboxInstance.SetVector(CirrusWindID, _currentCirrusOffset);
             _skyboxInstance.SetFloat(CirrusCoverageID, coverage);

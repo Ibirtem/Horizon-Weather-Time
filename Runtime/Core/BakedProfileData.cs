@@ -44,7 +44,7 @@ namespace BlackHorizon.HorizonWeatherTime
         public float turbidity = 5.0f;
         public float mieCoefficient = 0.005f;
         public float mieDirectionalG = 0.8f;
-        public float exposure = 0.3f;
+        public float exposure = 15.0f;
 
         // =====================================================
         // DEEP SPACE
@@ -54,10 +54,10 @@ namespace BlackHorizon.HorizonWeatherTime
         public Cubemap milkyWayCubemap;
         public Vector3 starfieldAlignment = Vector3.zero;
         public float starsRotationSpeed = 0.5f;
-        public float starsIntensity = 1.0f;
-        public float milkyWayIntensity = 1.0f;
+        public float starsIntensity = 0.04f;
+        public float milkyWayIntensity = 0.005f;
         public float twinkleScale = 150f;
-        public float twinkleSpeed = 0.7f;
+        public float twinkleSpeed = 0.004f;
         public float twinkleStrength = 0.8f;
 
         // =====================================================
@@ -65,8 +65,8 @@ namespace BlackHorizon.HorizonWeatherTime
         // =====================================================
         [Header("Moon")]
         public Texture moonTexture;
-        public float moonSize = 0.02f;
-        public Color moonTint = Color.white;
+        public float moonSize = 0.012f;
+        public Color moonTint = new Color(0.85f, 0.85f, 0.8f, 1f);
 
         // =====================================================
         // VOLUMETRIC CLOUDS
@@ -76,36 +76,36 @@ namespace BlackHorizon.HorizonWeatherTime
         public Texture weatherMapTexture;
         public Texture blueNoiseTexture;
         public Texture2D curlNoiseTexture;
-        public float cloudAltitude = 4.0f;
-        public float cloudScale = 3.5f;
-        public float cloudCoverage = 0.5f;
-        public float cloudDensity = 1.0f;
-        public float cloudDetailAmount = 0.5f;
-        public float cloudWispiness = 0.3f;
-        public Vector2 cloudWindSpeed = Vector2.zero;
-        public Color cloudBaseColor = Color.white;
-        public Color cloudShadowColor = Color.gray;
-        public float cloudLightScattering = 2.0f;
+        public float cloudAltitude = 2.0f;
+        public float cloudScale = 1.0f;
+        public float cloudCoverage = 0.6f;
+        public float cloudDensity = 1.4f;
+        public float cloudDetailAmount = 0.4f;
+        public float cloudWispiness = 0.1f;
+        public Vector2 cloudWindSpeed = new Vector2(0.002f, 0.001f);
+        public Color cloudBaseColor = new Color(0.95f, 0.95f, 0.95f);
+        public Color cloudShadowColor = new Color(0.35f, 0.4f, 0.5f);
+        public float cloudLightScattering = 1.5f;
 
         // =====================================================
         // CIRRUS CLOUDS
         // =====================================================
         [Header("Cirrus")]
         public Texture2D cirrusNoiseTexture;
-        public float cirrusCoverage = 0.5f;
-        public float cirrusOpacity = 0.8f;
-        public float cirrusScale = 1.0f;
-        public Vector2 cirrusWindSpeed = new Vector2(0.005f, 0.002f);
+        public float cirrusCoverage = 0.67f;
+        public float cirrusOpacity = 0.7f;
+        public float cirrusScale = 0.5f;
+        public Vector2 cirrusWindSpeed = new Vector2(0.002f, 0.001f);
         public Color cirrusTint = Color.white;
 
         // =====================================================
         // FOG
         // =====================================================
         [Header("Fog")]
-        public bool fogEnabled = false;
-        public int fogMode = 1;
-        public Color fogDayColor = Color.gray;
-        public Color fogNightColor = Color.black;
+        public bool fogEnabled = true;
+        public int fogMode = 2;
+        public Color fogDayColor = new Color(0.7f, 0.8f, 1f);
+        public Color fogNightColor = new Color(0.05f, 0.05f, 0.15f);
         public float fogDensity = 0.002f;
         public float fogStartDistance = 10f;
         public float fogEndDistance = 250f;
@@ -117,7 +117,7 @@ namespace BlackHorizon.HorizonWeatherTime
         [Header("Effects")]
         public GameObject weatherEffectPrefab;
         public float spawnHeightOffset = 15f;
-        public Vector3 volumeBounds = new Vector3(40, 40, 40);
+        public Vector3 volumeBounds = new Vector3(40f, 40f, 40f);
         public float particleSize = 0.05f;
         public float weatherDensity = 1.0f;
 
