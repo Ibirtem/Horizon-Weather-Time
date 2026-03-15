@@ -500,6 +500,23 @@ namespace BlackHorizon.HorizonWeatherTime
 
         private void CheckAndConfigureDependencies()
         {
+            var defaultPresets = EnsureDefaultPresets();
+
+            EnsureProfilesAreInAllowedList(defaultPresets);
+            CheckAndGenerateCloudTexture(defaultPresets);
+            CheckAndConfigureSkyboxMaterial();
+            CheckAndConfigureParticleAssets();
+            CheckAndConfigureOcclusionCamera();
+            CheckLUTStatus();
+
+            AssetDatabase.SaveAssets();
+        }
+
+        /// <summary>
+        /// Creates default weather presets if they don't exist.
+        /// </summary>
+        private List<WeatherProfile> EnsureDefaultPresets()
+        {
             var defaultPresets = new List<WeatherProfile>();
 
             // 1. CLEAR PRESET
@@ -540,14 +557,7 @@ namespace BlackHorizon.HorizonWeatherTime
             if (snow != null) defaultPresets.Add(snow);
             if (rain != null) defaultPresets.Add(rain);
 
-            EnsureProfilesAreInAllowedList(defaultPresets);
-            CheckAndGenerateCloudTexture(defaultPresets);
-            CheckAndConfigureSkyboxMaterial();
-            CheckAndConfigureParticleAssets();
-            CheckAndConfigureOcclusionCamera();
-            CheckLUTStatus();
-
-            AssetDatabase.SaveAssets();
+            return defaultPresets;
         }
 
         // --- FACTORY METHODS ---
