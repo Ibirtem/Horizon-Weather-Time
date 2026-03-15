@@ -154,10 +154,15 @@ namespace BlackHorizon.HorizonWeatherTime
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
 
-            Debug.Log($"<b><color=#33FF33>[TEMPLATES]</color></b> <color=white>Generated 3 presets + 15 modules in {TEMPLATES_ROOT}</color>");
+            int presetCount = Directory.GetFiles(PRESETS_DIR, "*.asset").Length;
+            int moduleCount = 0;
+            foreach (var dir in Directory.GetDirectories(MODULES_DIR))
+                moduleCount += Directory.GetFiles(dir, "*.asset").Length;
+
+            Debug.Log($"<b><color=#33FF33>[TEMPLATES]</color></b> <color=white>Generated {presetCount} presets + {moduleCount} modules in {TEMPLATES_ROOT}</color>");
 
             EditorUtility.DisplayDialog("Template Generator",
-                "Default templates generated!\n\n" +
+                $"Generated {presetCount} presets + {moduleCount} modules.\n\n" +
                 $"Location: {TEMPLATES_ROOT}\n\n" +
                 "You can now tune their values in the Inspector.\n" +
                 "These templates will be used as source for new user presets.",
