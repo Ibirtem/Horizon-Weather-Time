@@ -44,7 +44,7 @@ MonoBehaviour:
       Data: 
     - Name: 
       Entry: 12
-      Data: 61
+      Data: 60
     - Name: 
       Entry: 7
       Data: 
@@ -1292,13 +1292,13 @@ MonoBehaviour:
       Data: 
     - Name: $k
       Entry: 1
-      Data: TwinkleDetailID
+      Data: TwinkleSharpnessID
     - Name: $v
       Entry: 7
       Data: 63|UdonSharp.Compiler.FieldDefinition, UdonSharp.Editor
     - Name: <Name>k__BackingField
       Entry: 1
-      Data: TwinkleDetailID
+      Data: TwinkleSharpnessID
     - Name: <UserType>k__BackingField
       Entry: 9
       Data: 17
@@ -1340,13 +1340,13 @@ MonoBehaviour:
       Data: 
     - Name: $k
       Entry: 1
-      Data: TwinkleSharpnessID
+      Data: TwinkleSpeedID
     - Name: $v
       Entry: 7
       Data: 65|UdonSharp.Compiler.FieldDefinition, UdonSharp.Editor
     - Name: <Name>k__BackingField
       Entry: 1
-      Data: TwinkleSharpnessID
+      Data: TwinkleSpeedID
     - Name: <UserType>k__BackingField
       Entry: 9
       Data: 17
@@ -1388,13 +1388,13 @@ MonoBehaviour:
       Data: 
     - Name: $k
       Entry: 1
-      Data: TwinkleSpeedID
+      Data: TwinkleStrengthID
     - Name: $v
       Entry: 7
       Data: 67|UdonSharp.Compiler.FieldDefinition, UdonSharp.Editor
     - Name: <Name>k__BackingField
       Entry: 1
-      Data: TwinkleSpeedID
+      Data: TwinkleStrengthID
     - Name: <UserType>k__BackingField
       Entry: 9
       Data: 17
@@ -1436,13 +1436,13 @@ MonoBehaviour:
       Data: 
     - Name: $k
       Entry: 1
-      Data: TwinkleStrengthID
+      Data: MoonTexID
     - Name: $v
       Entry: 7
       Data: 69|UdonSharp.Compiler.FieldDefinition, UdonSharp.Editor
     - Name: <Name>k__BackingField
       Entry: 1
-      Data: TwinkleStrengthID
+      Data: MoonTexID
     - Name: <UserType>k__BackingField
       Entry: 9
       Data: 17
@@ -1484,13 +1484,13 @@ MonoBehaviour:
       Data: 
     - Name: $k
       Entry: 1
-      Data: MoonTexID
+      Data: MoonColorID
     - Name: $v
       Entry: 7
       Data: 71|UdonSharp.Compiler.FieldDefinition, UdonSharp.Editor
     - Name: <Name>k__BackingField
       Entry: 1
-      Data: MoonTexID
+      Data: MoonColorID
     - Name: <UserType>k__BackingField
       Entry: 9
       Data: 17
@@ -1532,13 +1532,13 @@ MonoBehaviour:
       Data: 
     - Name: $k
       Entry: 1
-      Data: MoonColorID
+      Data: MoonSizeID
     - Name: $v
       Entry: 7
       Data: 73|UdonSharp.Compiler.FieldDefinition, UdonSharp.Editor
     - Name: <Name>k__BackingField
       Entry: 1
-      Data: MoonColorID
+      Data: MoonSizeID
     - Name: <UserType>k__BackingField
       Entry: 9
       Data: 17
@@ -1580,13 +1580,13 @@ MonoBehaviour:
       Data: 
     - Name: $k
       Entry: 1
-      Data: MoonSizeID
+      Data: MoonPositionID
     - Name: $v
       Entry: 7
       Data: 75|UdonSharp.Compiler.FieldDefinition, UdonSharp.Editor
     - Name: <Name>k__BackingField
       Entry: 1
-      Data: MoonSizeID
+      Data: MoonPositionID
     - Name: <UserType>k__BackingField
       Entry: 9
       Data: 17
@@ -1628,13 +1628,13 @@ MonoBehaviour:
       Data: 
     - Name: $k
       Entry: 1
-      Data: MoonPositionID
+      Data: CloudNoise3DID
     - Name: $v
       Entry: 7
       Data: 77|UdonSharp.Compiler.FieldDefinition, UdonSharp.Editor
     - Name: <Name>k__BackingField
       Entry: 1
-      Data: MoonPositionID
+      Data: CloudNoise3DID
     - Name: <UserType>k__BackingField
       Entry: 9
       Data: 17
@@ -1676,13 +1676,13 @@ MonoBehaviour:
       Data: 
     - Name: $k
       Entry: 1
-      Data: CloudNoise3DID
+      Data: CloudScaleID
     - Name: $v
       Entry: 7
       Data: 79|UdonSharp.Compiler.FieldDefinition, UdonSharp.Editor
     - Name: <Name>k__BackingField
       Entry: 1
-      Data: CloudNoise3DID
+      Data: CloudScaleID
     - Name: <UserType>k__BackingField
       Entry: 9
       Data: 17
@@ -1724,13 +1724,13 @@ MonoBehaviour:
       Data: 
     - Name: $k
       Entry: 1
-      Data: CloudScaleID
+      Data: CloudCoverageID
     - Name: $v
       Entry: 7
       Data: 81|UdonSharp.Compiler.FieldDefinition, UdonSharp.Editor
     - Name: <Name>k__BackingField
       Entry: 1
-      Data: CloudScaleID
+      Data: CloudCoverageID
     - Name: <UserType>k__BackingField
       Entry: 9
       Data: 17
@@ -1772,13 +1772,13 @@ MonoBehaviour:
       Data: 
     - Name: $k
       Entry: 1
-      Data: CloudCoverageID
+      Data: CloudWindID
     - Name: $v
       Entry: 7
       Data: 83|UdonSharp.Compiler.FieldDefinition, UdonSharp.Editor
     - Name: <Name>k__BackingField
       Entry: 1
-      Data: CloudCoverageID
+      Data: CloudWindID
     - Name: <UserType>k__BackingField
       Entry: 9
       Data: 17
@@ -1820,13 +1820,13 @@ MonoBehaviour:
       Data: 
     - Name: $k
       Entry: 1
-      Data: CloudWindID
+      Data: CloudColorID
     - Name: $v
       Entry: 7
       Data: 85|UdonSharp.Compiler.FieldDefinition, UdonSharp.Editor
     - Name: <Name>k__BackingField
       Entry: 1
-      Data: CloudWindID
+      Data: CloudColorID
     - Name: <UserType>k__BackingField
       Entry: 9
       Data: 17
@@ -1868,13 +1868,13 @@ MonoBehaviour:
       Data: 
     - Name: $k
       Entry: 1
-      Data: CloudColorID
+      Data: CloudShadowColorID
     - Name: $v
       Entry: 7
       Data: 87|UdonSharp.Compiler.FieldDefinition, UdonSharp.Editor
     - Name: <Name>k__BackingField
       Entry: 1
-      Data: CloudColorID
+      Data: CloudShadowColorID
     - Name: <UserType>k__BackingField
       Entry: 9
       Data: 17
@@ -1916,13 +1916,13 @@ MonoBehaviour:
       Data: 
     - Name: $k
       Entry: 1
-      Data: CloudShadowColorID
+      Data: CloudAltitudeID
     - Name: $v
       Entry: 7
       Data: 89|UdonSharp.Compiler.FieldDefinition, UdonSharp.Editor
     - Name: <Name>k__BackingField
       Entry: 1
-      Data: CloudShadowColorID
+      Data: CloudAltitudeID
     - Name: <UserType>k__BackingField
       Entry: 9
       Data: 17
@@ -1964,13 +1964,13 @@ MonoBehaviour:
       Data: 
     - Name: $k
       Entry: 1
-      Data: CloudAltitudeID
+      Data: CloudDensityID
     - Name: $v
       Entry: 7
       Data: 91|UdonSharp.Compiler.FieldDefinition, UdonSharp.Editor
     - Name: <Name>k__BackingField
       Entry: 1
-      Data: CloudAltitudeID
+      Data: CloudDensityID
     - Name: <UserType>k__BackingField
       Entry: 9
       Data: 17
@@ -2012,13 +2012,13 @@ MonoBehaviour:
       Data: 
     - Name: $k
       Entry: 1
-      Data: CloudDensityID
+      Data: CloudDetailID
     - Name: $v
       Entry: 7
       Data: 93|UdonSharp.Compiler.FieldDefinition, UdonSharp.Editor
     - Name: <Name>k__BackingField
       Entry: 1
-      Data: CloudDensityID
+      Data: CloudDetailID
     - Name: <UserType>k__BackingField
       Entry: 9
       Data: 17
@@ -2060,13 +2060,13 @@ MonoBehaviour:
       Data: 
     - Name: $k
       Entry: 1
-      Data: CloudDetailID
+      Data: CloudWispID
     - Name: $v
       Entry: 7
       Data: 95|UdonSharp.Compiler.FieldDefinition, UdonSharp.Editor
     - Name: <Name>k__BackingField
       Entry: 1
-      Data: CloudDetailID
+      Data: CloudWispID
     - Name: <UserType>k__BackingField
       Entry: 9
       Data: 17
@@ -2108,13 +2108,13 @@ MonoBehaviour:
       Data: 
     - Name: $k
       Entry: 1
-      Data: CloudWispID
+      Data: CloudScatterID
     - Name: $v
       Entry: 7
       Data: 97|UdonSharp.Compiler.FieldDefinition, UdonSharp.Editor
     - Name: <Name>k__BackingField
       Entry: 1
-      Data: CloudWispID
+      Data: CloudScatterID
     - Name: <UserType>k__BackingField
       Entry: 9
       Data: 17
@@ -2156,13 +2156,13 @@ MonoBehaviour:
       Data: 
     - Name: $k
       Entry: 1
-      Data: CloudScatterID
+      Data: WeatherMapTexID
     - Name: $v
       Entry: 7
       Data: 99|UdonSharp.Compiler.FieldDefinition, UdonSharp.Editor
     - Name: <Name>k__BackingField
       Entry: 1
-      Data: CloudScatterID
+      Data: WeatherMapTexID
     - Name: <UserType>k__BackingField
       Entry: 9
       Data: 17
@@ -2205,13 +2205,13 @@ MonoBehaviour:
       Data: 
     - Name: $k
       Entry: 1
-      Data: WeatherMapTexID
+      Data: BlueNoiseTexID
     - Name: $v
       Entry: 7
       Data: 101|UdonSharp.Compiler.FieldDefinition, UdonSharp.Editor
     - Name: <Name>k__BackingField
       Entry: 1
-      Data: WeatherMapTexID
+      Data: BlueNoiseTexID
     - Name: <UserType>k__BackingField
       Entry: 9
       Data: 17
@@ -2254,13 +2254,13 @@ MonoBehaviour:
       Data: 
     - Name: $k
       Entry: 1
-      Data: BlueNoiseTexID
+      Data: CurlNoiseTexID
     - Name: $v
       Entry: 7
       Data: 103|UdonSharp.Compiler.FieldDefinition, UdonSharp.Editor
     - Name: <Name>k__BackingField
       Entry: 1
-      Data: BlueNoiseTexID
+      Data: CurlNoiseTexID
     - Name: <UserType>k__BackingField
       Entry: 9
       Data: 17
@@ -2303,19 +2303,19 @@ MonoBehaviour:
       Data: 
     - Name: $k
       Entry: 1
-      Data: CurlNoiseTexID
+      Data: _currentCurlTexture
     - Name: $v
       Entry: 7
       Data: 105|UdonSharp.Compiler.FieldDefinition, UdonSharp.Editor
     - Name: <Name>k__BackingField
       Entry: 1
-      Data: CurlNoiseTexID
+      Data: _currentCurlTexture
     - Name: <UserType>k__BackingField
       Entry: 9
-      Data: 17
+      Data: 24
     - Name: <SystemType>k__BackingField
       Entry: 9
-      Data: 17
+      Data: 24
     - Name: <SyncMode>k__BackingField
       Entry: 7
       Data: System.Nullable`1[[UdonSharp.UdonSyncMode, UdonSharp.Runtime]], mscorlib
@@ -2352,19 +2352,19 @@ MonoBehaviour:
       Data: 
     - Name: $k
       Entry: 1
-      Data: _currentCurlTexture
+      Data: CirrusTexID
     - Name: $v
       Entry: 7
       Data: 107|UdonSharp.Compiler.FieldDefinition, UdonSharp.Editor
     - Name: <Name>k__BackingField
       Entry: 1
-      Data: _currentCurlTexture
+      Data: CirrusTexID
     - Name: <UserType>k__BackingField
       Entry: 9
-      Data: 24
+      Data: 17
     - Name: <SystemType>k__BackingField
       Entry: 9
-      Data: 24
+      Data: 17
     - Name: <SyncMode>k__BackingField
       Entry: 7
       Data: System.Nullable`1[[UdonSharp.UdonSyncMode, UdonSharp.Runtime]], mscorlib
@@ -2401,13 +2401,13 @@ MonoBehaviour:
       Data: 
     - Name: $k
       Entry: 1
-      Data: CirrusTexID
+      Data: CirrusCoverageID
     - Name: $v
       Entry: 7
       Data: 109|UdonSharp.Compiler.FieldDefinition, UdonSharp.Editor
     - Name: <Name>k__BackingField
       Entry: 1
-      Data: CirrusTexID
+      Data: CirrusCoverageID
     - Name: <UserType>k__BackingField
       Entry: 9
       Data: 17
@@ -2450,13 +2450,13 @@ MonoBehaviour:
       Data: 
     - Name: $k
       Entry: 1
-      Data: CirrusCoverageID
+      Data: CirrusOpacityID
     - Name: $v
       Entry: 7
       Data: 111|UdonSharp.Compiler.FieldDefinition, UdonSharp.Editor
     - Name: <Name>k__BackingField
       Entry: 1
-      Data: CirrusCoverageID
+      Data: CirrusOpacityID
     - Name: <UserType>k__BackingField
       Entry: 9
       Data: 17
@@ -2499,13 +2499,13 @@ MonoBehaviour:
       Data: 
     - Name: $k
       Entry: 1
-      Data: CirrusOpacityID
+      Data: CirrusScaleID
     - Name: $v
       Entry: 7
       Data: 113|UdonSharp.Compiler.FieldDefinition, UdonSharp.Editor
     - Name: <Name>k__BackingField
       Entry: 1
-      Data: CirrusOpacityID
+      Data: CirrusScaleID
     - Name: <UserType>k__BackingField
       Entry: 9
       Data: 17
@@ -2548,13 +2548,13 @@ MonoBehaviour:
       Data: 
     - Name: $k
       Entry: 1
-      Data: CirrusScaleID
+      Data: CirrusWindID
     - Name: $v
       Entry: 7
       Data: 115|UdonSharp.Compiler.FieldDefinition, UdonSharp.Editor
     - Name: <Name>k__BackingField
       Entry: 1
-      Data: CirrusScaleID
+      Data: CirrusWindID
     - Name: <UserType>k__BackingField
       Entry: 9
       Data: 17
@@ -2597,13 +2597,13 @@ MonoBehaviour:
       Data: 
     - Name: $k
       Entry: 1
-      Data: CirrusWindID
+      Data: CirrusTintID
     - Name: $v
       Entry: 7
       Data: 117|UdonSharp.Compiler.FieldDefinition, UdonSharp.Editor
     - Name: <Name>k__BackingField
       Entry: 1
-      Data: CirrusWindID
+      Data: CirrusTintID
     - Name: <UserType>k__BackingField
       Entry: 9
       Data: 17
@@ -2646,19 +2646,19 @@ MonoBehaviour:
       Data: 
     - Name: $k
       Entry: 1
-      Data: CirrusTintID
+      Data: _currentCirrusTexture
     - Name: $v
       Entry: 7
       Data: 119|UdonSharp.Compiler.FieldDefinition, UdonSharp.Editor
     - Name: <Name>k__BackingField
       Entry: 1
-      Data: CirrusTintID
+      Data: _currentCirrusTexture
     - Name: <UserType>k__BackingField
       Entry: 9
-      Data: 17
+      Data: 24
     - Name: <SystemType>k__BackingField
       Entry: 9
-      Data: 17
+      Data: 24
     - Name: <SyncMode>k__BackingField
       Entry: 7
       Data: System.Nullable`1[[UdonSharp.UdonSyncMode, UdonSharp.Runtime]], mscorlib
@@ -2695,19 +2695,19 @@ MonoBehaviour:
       Data: 
     - Name: $k
       Entry: 1
-      Data: _currentCirrusTexture
+      Data: _currentCirrusOffset
     - Name: $v
       Entry: 7
       Data: 121|UdonSharp.Compiler.FieldDefinition, UdonSharp.Editor
     - Name: <Name>k__BackingField
       Entry: 1
-      Data: _currentCirrusTexture
+      Data: _currentCirrusOffset
     - Name: <UserType>k__BackingField
       Entry: 9
-      Data: 24
+      Data: 32
     - Name: <SystemType>k__BackingField
       Entry: 9
-      Data: 24
+      Data: 32
     - Name: <SyncMode>k__BackingField
       Entry: 7
       Data: System.Nullable`1[[UdonSharp.UdonSyncMode, UdonSharp.Runtime]], mscorlib
@@ -2744,19 +2744,19 @@ MonoBehaviour:
       Data: 
     - Name: $k
       Entry: 1
-      Data: _currentCirrusOffset
+      Data: CloudTimeID
     - Name: $v
       Entry: 7
       Data: 123|UdonSharp.Compiler.FieldDefinition, UdonSharp.Editor
     - Name: <Name>k__BackingField
       Entry: 1
-      Data: _currentCirrusOffset
+      Data: CloudTimeID
     - Name: <UserType>k__BackingField
       Entry: 9
-      Data: 32
+      Data: 17
     - Name: <SystemType>k__BackingField
       Entry: 9
-      Data: 32
+      Data: 17
     - Name: <SyncMode>k__BackingField
       Entry: 7
       Data: System.Nullable`1[[UdonSharp.UdonSyncMode, UdonSharp.Runtime]], mscorlib
@@ -2793,13 +2793,13 @@ MonoBehaviour:
       Data: 
     - Name: $k
       Entry: 1
-      Data: CloudTimeID
+      Data: FogColorID
     - Name: $v
       Entry: 7
       Data: 125|UdonSharp.Compiler.FieldDefinition, UdonSharp.Editor
     - Name: <Name>k__BackingField
       Entry: 1
-      Data: CloudTimeID
+      Data: FogColorID
     - Name: <UserType>k__BackingField
       Entry: 9
       Data: 17
@@ -2842,13 +2842,13 @@ MonoBehaviour:
       Data: 
     - Name: $k
       Entry: 1
-      Data: FogColorID
+      Data: FogBlendID
     - Name: $v
       Entry: 7
       Data: 127|UdonSharp.Compiler.FieldDefinition, UdonSharp.Editor
     - Name: <Name>k__BackingField
       Entry: 1
-      Data: FogColorID
+      Data: FogBlendID
     - Name: <UserType>k__BackingField
       Entry: 9
       Data: 17
@@ -2891,13 +2891,13 @@ MonoBehaviour:
       Data: 
     - Name: $k
       Entry: 1
-      Data: FogBlendID
+      Data: AirglowIntensityID
     - Name: $v
       Entry: 7
       Data: 129|UdonSharp.Compiler.FieldDefinition, UdonSharp.Editor
     - Name: <Name>k__BackingField
       Entry: 1
-      Data: FogBlendID
+      Data: AirglowIntensityID
     - Name: <UserType>k__BackingField
       Entry: 9
       Data: 17
@@ -2940,13 +2940,13 @@ MonoBehaviour:
       Data: 
     - Name: $k
       Entry: 1
-      Data: AirglowIntensityID
+      Data: AirglowColorID
     - Name: $v
       Entry: 7
       Data: 131|UdonSharp.Compiler.FieldDefinition, UdonSharp.Editor
     - Name: <Name>k__BackingField
       Entry: 1
-      Data: AirglowIntensityID
+      Data: AirglowColorID
     - Name: <UserType>k__BackingField
       Entry: 9
       Data: 17
@@ -2989,13 +2989,13 @@ MonoBehaviour:
       Data: 
     - Name: $k
       Entry: 1
-      Data: AirglowColorID
+      Data: AirglowHeightID
     - Name: $v
       Entry: 7
       Data: 133|UdonSharp.Compiler.FieldDefinition, UdonSharp.Editor
     - Name: <Name>k__BackingField
       Entry: 1
-      Data: AirglowColorID
+      Data: AirglowHeightID
     - Name: <UserType>k__BackingField
       Entry: 9
       Data: 17
@@ -3017,55 +3017,6 @@ MonoBehaviour:
     - Name: _fieldAttributes
       Entry: 7
       Data: 134|System.Collections.Generic.List`1[[System.Attribute, mscorlib]],
-        mscorlib
-    - Name: 
-      Entry: 12
-      Data: 0
-    - Name: 
-      Entry: 13
-      Data: 
-    - Name: 
-      Entry: 8
-      Data: 
-    - Name: 
-      Entry: 8
-      Data: 
-    - Name: 
-      Entry: 8
-      Data: 
-    - Name: 
-      Entry: 7
-      Data: 
-    - Name: $k
-      Entry: 1
-      Data: AirglowHeightID
-    - Name: $v
-      Entry: 7
-      Data: 135|UdonSharp.Compiler.FieldDefinition, UdonSharp.Editor
-    - Name: <Name>k__BackingField
-      Entry: 1
-      Data: AirglowHeightID
-    - Name: <UserType>k__BackingField
-      Entry: 9
-      Data: 17
-    - Name: <SystemType>k__BackingField
-      Entry: 9
-      Data: 17
-    - Name: <SyncMode>k__BackingField
-      Entry: 7
-      Data: System.Nullable`1[[UdonSharp.UdonSyncMode, UdonSharp.Runtime]], mscorlib
-    - Name: 
-      Entry: 6
-      Data: 
-    - Name: 
-      Entry: 8
-      Data: 
-    - Name: <IsSerialized>k__BackingField
-      Entry: 5
-      Data: false
-    - Name: _fieldAttributes
-      Entry: 7
-      Data: 136|System.Collections.Generic.List`1[[System.Attribute, mscorlib]],
         mscorlib
     - Name: 
       Entry: 12

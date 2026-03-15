@@ -22,9 +22,6 @@ namespace BlackHorizon.HorizonWeatherTime
         [Header("General Settings")]
         public string profileName = "New Weather Preset";
 
-        [HideInInspector]
-        public GameObject udon_WeatherEffectPrefab;
-
         [Header("Decomposed Sub-Profiles")]
         [Tooltip("Controls sun, moon, and ambient lighting colors.")]
         public LightingProfile lightingProfile;
@@ -46,12 +43,9 @@ namespace BlackHorizon.HorizonWeatherTime
 
         private void OnValidate()
         {
-            if (effectsProfile != null) udon_WeatherEffectPrefab = effectsProfile.weatherEffectPrefab;
-            else udon_WeatherEffectPrefab = null;
-
 #if UNITY_EDITOR
-            UnityEditor.EditorApplication.delayCall -= RequestEditorUpdate;
-            UnityEditor.EditorApplication.delayCall += RequestEditorUpdate;
+    UnityEditor.EditorApplication.delayCall -= RequestEditorUpdate;
+    UnityEditor.EditorApplication.delayCall += RequestEditorUpdate;
 #endif
         }
 

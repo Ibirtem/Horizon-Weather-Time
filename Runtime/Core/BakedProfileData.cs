@@ -57,6 +57,7 @@ namespace BlackHorizon.HorizonWeatherTime
         public float starsIntensity = 0.04f;
         public float milkyWayIntensity = 0.005f;
         public float twinkleScale = 150f;
+        public float twinkleSharpness = 4f;
         public float twinkleSpeed = 0.004f;
         public float twinkleStrength = 0.8f;
 
@@ -176,6 +177,7 @@ namespace BlackHorizon.HorizonWeatherTime
                 starsIntensity = sp.starsIntensity;
                 milkyWayIntensity = sp.milkyWayIntensity;
                 twinkleScale = sp.twinkleScale;
+                twinkleSharpness = sp.twinkleSharpness;
                 twinkleSpeed = sp.twinkleSpeed;
                 twinkleStrength = sp.twinkleStrength;
 

@@ -13,7 +13,6 @@ Shader "Horizon/Procedural Skybox"
 
         [Header(Stars Twinkle)]
         [HideInInspector] _TwinkleScale ("Twinkle Scale", Float) = 150.0
-        [HideInInspector] _TwinkleDetail ("Twinkle Detail", Int) = 3
         [HideInInspector] _TwinkleSharpness ("Twinkle Sharpness", Float) = 5.0
         [HideInInspector] _TwinkleSpeed ("Twinkle Speed", Float) = 0.004
         [HideInInspector] _TwinkleStrength ("Twinkle Strength", Range(0.0, 2.0)) = 0.8
@@ -102,7 +101,6 @@ Shader "Horizon/Procedural Skybox"
 
             // Stars Twinkle
             float _TwinkleScale;
-            int   _TwinkleDetail;
             float _TwinkleSharpness;
             float _TwinkleSpeed;
             float _TwinkleStrength;

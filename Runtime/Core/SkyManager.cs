@@ -54,7 +54,6 @@ namespace BlackHorizon.HorizonWeatherTime
         // Twinkle
         private int StarsFadeID;
         private int TwinkleScaleID;
-        private int TwinkleDetailID;
         private int TwinkleSharpnessID;
         private int TwinkleSpeedID;
         private int TwinkleStrengthID;
@@ -107,7 +106,6 @@ namespace BlackHorizon.HorizonWeatherTime
 
             StarsFadeID = VRCShader.PropertyToID("_StarsFade");
             TwinkleScaleID = VRCShader.PropertyToID("_TwinkleScale");
-            TwinkleDetailID = VRCShader.PropertyToID("_TwinkleDetail");
             TwinkleSharpnessID = VRCShader.PropertyToID("_TwinkleSharpness");
             TwinkleSpeedID = VRCShader.PropertyToID("_TwinkleSpeed");
             TwinkleStrengthID = VRCShader.PropertyToID("_TwinkleStrength");
@@ -278,7 +276,7 @@ namespace BlackHorizon.HorizonWeatherTime
         public void UpdateStars(Vector3 starfieldRotation, Vector3 sunDirection,
             Cubemap starsCube, Cubemap mwCube,
             float starsInt, float mwInt,
-            float twinkleScale, float twinkleSpeed, float twinkleStrength)
+            float twinkleScale, float twinkleSharpness, float twinkleSpeed, float twinkleStrength)
         {
             EnsureInitialized();
             if (_skyboxInstance == null) return;
@@ -299,7 +297,7 @@ namespace BlackHorizon.HorizonWeatherTime
 
             // Twinkle
             _skyboxInstance.SetFloat(TwinkleScaleID, twinkleScale);
-            _skyboxInstance.SetInt(TwinkleDetailID, 3);
+            _skyboxInstance.SetFloat(TwinkleSharpnessID, twinkleSharpness);
             _skyboxInstance.SetFloat(TwinkleSpeedID, twinkleSpeed);
             _skyboxInstance.SetFloat(TwinkleStrengthID, twinkleStrength);
         }

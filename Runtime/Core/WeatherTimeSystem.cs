@@ -703,7 +703,7 @@ private void OnValidate()
                 _skyManager.UpdateStars(starfieldEuler, sun.transform.forward,
                     sp.starsCubemap, sp.milkyWayCubemap,
                     sp.starsIntensity, sp.milkyWayIntensity,
-                    sp.twinkleScale, sp.twinkleSpeed, sp.twinkleStrength);
+                    sp.twinkleScale, sp.twinkleSharpness, sp.twinkleSpeed, sp.twinkleStrength);
 
                 _skyManager.UpdateNightSky(sp.airglowIntensity, sp.airglowColor, sp.airglowHeight);
 
@@ -734,8 +734,9 @@ private void OnValidate()
             // Moon
             if (moon != null && mp != null)
             {
+                Color finalMoonColor = _lightingManager.MoonSkyboxColor * mp.moonTint;
                 _skyManager.UpdateMoon(moon.transform.forward,
-                    mp.moonTexture, _lightingManager.MoonSkyboxColor, mp.moonSize);
+                    mp.moonTexture, finalMoonColor, mp.moonSize);
             }
         }
 
