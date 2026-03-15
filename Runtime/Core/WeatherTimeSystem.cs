@@ -63,7 +63,6 @@ namespace BlackHorizon.HorizonWeatherTime
         public float dayOfYear = 1f;
 
         private bool _isExternallyControlled = false;
-        private bool _requiresEditorUpdate = false;
 
         [Header("Weather Settings")]
         [Tooltip("List of Weather Profiles. Stored as generic Objects for Udon compatibility.")]
@@ -236,13 +235,6 @@ private void OnValidate()
 
         private void Update()
         {
-#if !COMPILER_UDONSHARP && UNITY_EDITOR
-            if (!Application.isPlaying && _requiresEditorUpdate)
-            {
-                _requiresEditorUpdate = false;
-                UpdateSystem();
-            }
-#endif
             bool isPlaying = true;
 #if !COMPILER_UDONSHARP && UNITY_EDITOR
             isPlaying = Application.isPlaying;
@@ -317,7 +309,8 @@ private void OnValidate()
         {
             _isExternallyControlled = true;
             _sunTimeOfDay = Mathf.Clamp01(time01);
-            _moonTimeOfDay = (_sunTimeOfDay + 0.5f) % 1.0f;
+
+            _moonTimeOfDay = (_sunTimeOfDay - moonPhase + 1.0f) % 1.0f;
 
             UpdateSystem();
 
@@ -348,7 +341,7 @@ private void OnValidate()
                 moonPhase = (float)((daysSinceNewMoon % synodicMonth) / synodicMonth);
                 if (moonPhase < 0f) moonPhase += 1.0f;
 
-                _moonTimeOfDay = (_sunTimeOfDay + moonPhase) % 1.0f;
+                _moonTimeOfDay = (_sunTimeOfDay - moonPhase + 1.0f) % 1.0f;
             }
             else
             {
@@ -379,7 +372,7 @@ private void OnValidate()
 
                 if (simulateMoonPhase)
                 {
-                    _moonTimeOfDay = (_sunTimeOfDay + moonPhase) % 1.0f;
+                    _moonTimeOfDay = (_sunTimeOfDay - moonPhase + 1.0f) % 1.0f;
                 }
             }
         }
@@ -562,8 +555,10 @@ private void OnValidate()
             Vector3 sunDir = ComputeCelestialDirection(_sunTimeOfDay, sunDeclination, latitude);
             Quaternion sunLightRot = Quaternion.LookRotation(-sunDir);
 
-            float moonEclipticOffset = 5.14f * Mathf.Sin(moonPhase * Mathf.PI * 2f);
+            float draconicMonth = 27.2122f;
+            float moonEclipticOffset = 5.14f * Mathf.Sin((dayOfYear / draconicMonth) * Mathf.PI * 2f);
             float moonDeclination = sunDeclination + moonEclipticOffset;
+
             Vector3 moonDir = ComputeCelestialDirection(_moonTimeOfDay, moonDeclination, latitude);
             Quaternion moonLightRot = Quaternion.LookRotation(-moonDir);
 

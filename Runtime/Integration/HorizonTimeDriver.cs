@@ -21,8 +21,6 @@ namespace BlackHorizon.HorizonWeatherTime
 
         private bool _isLocalOverride = false;
         private VRCPlayerApi _localPlayer;
-        
-        private float _manualTime = 0.25f;
 
         private void Start()
         {
@@ -31,54 +29,8 @@ namespace BlackHorizon.HorizonWeatherTime
 
             if (targetSystem != null)
             {
-                if (targetSystem.timeMode != TimeMode.SyncWithSystemClock)
-                {
-                    _manualTime = targetSystem._sunTimeOfDay;
-                }
-                
                 ApplyWeather(_syncedProfileIndex);
             }
-        }
-
-        private void LateUpdate()
-        {
-            if (targetSystem == null) return;
-
-            if (!Utilities.IsValid(_localPlayer))
-            {
-                _localPlayer = Networking.LocalPlayer;
-            }
-
-            float currentTime01 = 0f;
-
-            if (targetSystem.timeMode == TimeMode.SyncWithSystemClock)
-            {
-                System.DateTime currentUtc = System.DateTime.UtcNow;
-                
-                System.DateTime instanceTime = currentUtc.AddHours(targetSystem.timeZoneOffset);
-                
-                currentTime01 = (float)(instanceTime.TimeOfDay.TotalSeconds / 86400.0);
-            }
-            else
-            {    
-                _manualTime = targetSystem._sunTimeOfDay;
-                
-                if (targetSystem.timeMode == TimeMode.SimulatedFlow)
-                {
-                    _manualTime += (Time.deltaTime / 86400f) * targetSystem.timeSpeed;
-                }
-                
-                _manualTime %= 1.0f;
-                currentTime01 = _manualTime;
-            }
-
-            Vector3 headPos = transform.position;
-            if (Utilities.IsValid(_localPlayer))
-            {
-                headPos = _localPlayer.GetTrackingData(VRCPlayerApi.TrackingDataType.Head).position;
-            }
-
-            targetSystem.ManualUpdate(currentTime01, headPos);
         }
 
         public override void OnDeserialization()
