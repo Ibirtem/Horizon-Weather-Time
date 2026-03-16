@@ -503,7 +503,7 @@ namespace BlackHorizon.HorizonWeatherTime
             var defaultPresets = EnsureDefaultPresets();
 
             EnsureProfilesAreInAllowedList(defaultPresets);
-            CheckAndGenerateCloudTexture(defaultPresets);
+            EnsureProceduralTextures();
             CheckAndConfigureSkyboxMaterial();
             CheckAndConfigureParticleAssets();
             CheckAndConfigureOcclusionCamera();
@@ -613,114 +613,46 @@ namespace BlackHorizon.HorizonWeatherTime
             return copy;
         }
 
-        // --- FACTORY METHODS ---
-
-        /// <summary>
-        /// Automatically finds and assigns Star and Milky Way textures based on naming conventions.
-        /// </summary>
-        private void CheckAndAssignDeepSpaceAssets(WeatherProfile p)
-        {
-            if (p.skyProfile == null)
-            {
-                return;
-            }
-
-            bool isDirty = false;
-            string starsFolder = "Assets/Horizon Weather & Time/Textures/Sky";
-
-            // 1. Search for Star Map Cubemap
-            if (p.skyProfile.starsCubemap == null)
-            {
-                string[] guids = AssetDatabase.FindAssets("stars t:Cubemap", new[] { starsFolder });
-
-                foreach (var guid in guids)
-                {
-                    string path = AssetDatabase.GUIDToAssetPath(guid);
-                    Cubemap cube = AssetDatabase.LoadAssetAtPath<Cubemap>(path);
-
-                    if (cube != null)
-                    {
-                        p.skyProfile.starsCubemap = cube;
-                        isDirty = true;
-                        break;
-                    }
-                }
-            }
-
-            // 2. Search for Milky Way Cubemap
-            if (p.skyProfile.milkyWayCubemap == null)
-            {
-                string[] guids = AssetDatabase.FindAssets("milkyway t:Cubemap", new[] { starsFolder });
-
-                foreach (var guid in guids)
-                {
-                    string path = AssetDatabase.GUIDToAssetPath(guid);
-                    Cubemap cube = AssetDatabase.LoadAssetAtPath<Cubemap>(path);
-
-                    if (cube != null)
-                    {
-                        p.skyProfile.milkyWayCubemap = cube;
-                        isDirty = true;
-                        break;
-                    }
-                }
-            }
-
-            // Restore default intensities if they are unset
-            if (p.skyProfile.starsIntensity <= 0.001f)
-            {
-                p.skyProfile.starsIntensity = 1.0f;
-                isDirty = true;
-            }
-
-            if (p.skyProfile.milkyWayIntensity <= 0.001f)
-            {
-                p.skyProfile.milkyWayIntensity = 1.0f;
-                isDirty = true;
-            }
-
-            if (isDirty)
-            {
-                EditorUtility.SetDirty(p.skyProfile);
-            }
-        }
-
         // --- ASSET HELPERS ---
 
-        private void CheckAndGenerateCloudTexture(List<WeatherProfile> profiles)
+        /// <summary>
+        /// Ensures all procedural textures exist on disk.
+        /// </summary>
+        private void EnsureProceduralTextures()
         {
-            string cloudPath3D = WeatherOptimizationGen.DEFAULT_CLOUD_NOISE_3D_PATH;
-            string weatherMapPath = WeatherOptimizationGen.DEFAULT_WEATHER_MAP_PATH;
-            string blueNoisePath = WeatherOptimizationGen.DEFAULT_BLUE_NOISE_PATH;
-            string cirrusPath = WeatherOptimizationGen.DEFAULT_CIRRUS_NOISE_PATH;
-
-            Texture3D cloudTex3D = AssetDatabase.LoadAssetAtPath<Texture3D>(cloudPath3D);
-            Texture2D weatherMapTex = AssetDatabase.LoadAssetAtPath<Texture2D>(weatherMapPath);
-            Texture2D blueNoiseTex = AssetDatabase.LoadAssetAtPath<Texture2D>(blueNoisePath);
-            Texture2D cirrusTex = AssetDatabase.LoadAssetAtPath<Texture2D>(cirrusPath);
-
-            if (cloudTex3D == null)
+            if (AssetDatabase.LoadAssetAtPath<Texture3D>(
+                WeatherOptimizationGen.DEFAULT_CLOUD_NOISE_3D_PATH) == null)
             {
-                WeatherOptimizationGen.Generate3DCloudNoise(cloudPath3D);
-                cloudTex3D = AssetDatabase.LoadAssetAtPath<Texture3D>(cloudPath3D);
+                WeatherOptimizationGen.Generate3DCloudNoise(
+                    WeatherOptimizationGen.DEFAULT_CLOUD_NOISE_3D_PATH);
             }
-            if (weatherMapTex == null) weatherMapTex = WeatherOptimizationGen.GenerateWeatherMap(weatherMapPath);
-            if (blueNoiseTex == null) blueNoiseTex = WeatherOptimizationGen.GenerateBlueNoise(blueNoisePath);
-            if (cirrusTex == null) cirrusTex = WeatherOptimizationGen.GenerateCirrusTexture(cirrusPath);
 
-            foreach (var p in profiles)
+            if (AssetDatabase.LoadAssetAtPath<Texture2D>(
+                WeatherOptimizationGen.DEFAULT_WEATHER_MAP_PATH) == null)
             {
-                if (p != null && p.cloudProfile != null)
-                {
-                    bool isDirty = false;
+                WeatherOptimizationGen.GenerateWeatherMap(
+                    WeatherOptimizationGen.DEFAULT_WEATHER_MAP_PATH);
+            }
 
-                    if (p.cloudProfile.cloudNoiseTexture == null) { p.cloudProfile.cloudNoiseTexture = cloudTex3D; isDirty = true; }
-                    if (p.cloudProfile.weatherMapTexture == null) { p.cloudProfile.weatherMapTexture = weatherMapTex; isDirty = true; }
-                    if (p.cloudProfile.blueNoiseTexture == null) { p.cloudProfile.blueNoiseTexture = blueNoiseTex; isDirty = true; }
-                    if (p.cloudProfile.cirrusNoiseTexture == null) { p.cloudProfile.cirrusNoiseTexture = cirrusTex; isDirty = true; }
+            if (AssetDatabase.LoadAssetAtPath<Texture2D>(
+                WeatherOptimizationGen.DEFAULT_BLUE_NOISE_PATH) == null)
+            {
+                WeatherOptimizationGen.GenerateBlueNoise(
+                    WeatherOptimizationGen.DEFAULT_BLUE_NOISE_PATH);
+            }
 
-                    if (isDirty) EditorUtility.SetDirty(p.cloudProfile);
-                }
+            if (AssetDatabase.LoadAssetAtPath<Texture2D>(
+                WeatherOptimizationGen.DEFAULT_CIRRUS_NOISE_PATH) == null)
+            {
+                WeatherOptimizationGen.GenerateCirrusTexture(
+                    WeatherOptimizationGen.DEFAULT_CIRRUS_NOISE_PATH);
+            }
+
+            if (AssetDatabase.LoadAssetAtPath<Texture2D>(
+                WeatherOptimizationGen.DEFAULT_CURL_NOISE_PATH) == null)
+            {
+                WeatherOptimizationGen.GenerateCurlNoise(
+                    WeatherOptimizationGen.DEFAULT_CURL_NOISE_PATH);
             }
         }
 
@@ -747,48 +679,6 @@ namespace BlackHorizon.HorizonWeatherTime
                 _target.weatherProfilesList = allowedList.ToArray();
                 EditorUtility.SetDirty(_target);
                 _target.Refresh();
-            }
-        }
-
-        /// <summary>
-        /// Final attempt to assign the generated Star Map cubemap asset by its specific default filename.
-        /// </summary>
-        /// <param name="p">The WeatherProfile to initialize.</param>
-        private void CheckAndAssignDefaultStarsTexture(WeatherProfile p)
-        {
-            if (p.skyProfile == null || p.skyProfile.starsCubemap != null)
-            {
-                return;
-            }
-
-            string[] guids = AssetDatabase.FindAssets("Horizon_StarMap_Gen t:Cubemap");
-
-            if (guids.Length > 0)
-            {
-                string path = AssetDatabase.GUIDToAssetPath(guids[0]);
-                Cubemap cube = AssetDatabase.LoadAssetAtPath<Cubemap>(path);
-
-                if (cube != null)
-                {
-                    p.skyProfile.starsCubemap = cube;
-                    EditorUtility.SetDirty(p.skyProfile);
-                }
-            }
-        }
-
-        private void CheckAndAssignDefaultMoonTexture(WeatherProfile p)
-        {
-            if (p.moonProfile.moonTexture != null) return;
-
-            string[] guids = AssetDatabase.FindAssets("lroc_color_poles_1k t:Texture");
-
-            if (guids.Length > 0)
-            {
-                string path = AssetDatabase.GUIDToAssetPath(guids[0]);
-
-                p.moonProfile.moonTexture = AssetDatabase.LoadAssetAtPath<Texture2D>(path);
-
-                EditorUtility.SetDirty(p.moonProfile);
             }
         }
 
