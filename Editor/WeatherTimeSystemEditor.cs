@@ -518,11 +518,13 @@ namespace BlackHorizon.HorizonWeatherTime
         /// </summary>
         private List<WeatherProfile> EnsureDefaultPresets()
         {
-            string templatesPresetDir = "Assets/Horizon Weather & Time/Internal/Templates/Presets";
-            if (!Directory.Exists(templatesPresetDir)
+            string templatesPresetDir = GetPackageTemplatesPath("Presets");
+            if (string.IsNullOrEmpty(templatesPresetDir)
+                || !Directory.Exists(templatesPresetDir)
                 || Directory.GetFiles(templatesPresetDir, "*.asset").Length == 0)
             {
                 HorizonTemplateGenerator.Generate();
+                templatesPresetDir = GetPackageTemplatesPath("Presets");
             }
 
             var defaultPresets = new List<WeatherProfile>();
@@ -548,7 +550,8 @@ namespace BlackHorizon.HorizonWeatherTime
             WeatherProfile existing = AssetDatabase.LoadAssetAtPath<WeatherProfile>(outputPath);
             if (existing != null) return existing;
 
-            string templatePath = $"Assets/Horizon Weather & Time/Internal/Templates/Presets/{templateName}.asset";
+            string templateDir = GetPackageTemplatesPath("Presets");
+            string templatePath = $"{templateDir}/{templateName}.asset";
             WeatherProfile template = AssetDatabase.LoadAssetAtPath<WeatherProfile>(templatePath);
             if (template == null)
             {
@@ -654,6 +657,27 @@ namespace BlackHorizon.HorizonWeatherTime
                 WeatherOptimizationGen.GenerateCurlNoise(
                     WeatherOptimizationGen.DEFAULT_CURL_NOISE_PATH);
             }
+        }
+
+        /// <summary>
+        /// Finds the Internal/Templates path inside the package, regardless of install method.
+        /// </summary>
+        private static string GetPackageTemplatesPath(string subfolder = null)
+        {
+            string[] guids = AssetDatabase.FindAssets("HorizonTemplateGenerator t:MonoScript");
+            if (guids.Length > 0)
+            {
+                string scriptPath = AssetDatabase.GUIDToAssetPath(guids[0]);
+                string editorDir = Path.GetDirectoryName(scriptPath);
+                string packageRoot = Path.GetDirectoryName(editorDir);
+                string templatesRoot = packageRoot + "/Internal/Templates";
+
+                if (!string.IsNullOrEmpty(subfolder))
+                    return templatesRoot + "/" + subfolder;
+
+                return templatesRoot;
+            }
+            return null;
         }
 
         /// <summary>

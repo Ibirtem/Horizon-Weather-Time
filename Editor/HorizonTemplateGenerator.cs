@@ -10,9 +10,9 @@ namespace BlackHorizon.HorizonWeatherTime
     /// </summary>
     public static class HorizonTemplateGenerator
     {
-        private const string TEMPLATES_ROOT = "Assets/Horizon Weather & Time/Internal/Templates";
-        private const string PRESETS_DIR = TEMPLATES_ROOT + "/Presets";
-        private const string MODULES_DIR = TEMPLATES_ROOT + "/Modules";
+        private static string TEMPLATES_ROOT => GetPackageTemplatesRoot();
+        private static string PRESETS_DIR => TEMPLATES_ROOT + "/Presets";
+        private static string MODULES_DIR => TEMPLATES_ROOT + "/Modules";
 
         // ================================================================
         // MENU ITEMS
@@ -390,6 +390,20 @@ namespace BlackHorizon.HorizonWeatherTime
                 return Path.GetDirectoryName(editorDir);
             }
             return null;
+        }
+
+        /// <summary>
+        /// Returns the path to Internal/Templates inside the package folder.
+        /// Works whether the package is in Packages/ (VCC/git) or Assets/ (embedded).
+        /// </summary>
+        private static string GetPackageTemplatesRoot()
+        {
+            string packageRoot = FindPackageRoot();
+            if (!string.IsNullOrEmpty(packageRoot))
+            {
+                return packageRoot + "/Internal/Templates";
+            }
+            return "Assets/Horizon Weather & Time/Internal/Templates";
         }
     }
 }

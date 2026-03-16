@@ -1,0 +1,32 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ecd30d0b24aa2c94c9ab9d4ea7a85cf2, type: 3}
+  m_Name: Sky_Clear
+  m_EditorClassIdentifier: 
+  turbidity: 5
+  rayleigh: 1
+  mieCoefficient: 0.005
+  mieDirectionalG: 0.8
+  exposure: 15
+  starsCubemap: {fileID: 0}
+  milkyWayCubemap: {fileID: 0}
+  starfieldAlignment: {x: 0, y: 0, z: 0}
+  starsRotationSpeed: 0.5
+  starsIntensity: 0.04
+  milkyWayIntensity: 0.005
+  twinkleScale: 150
+  twinkleSharpness: 4
+  twinkleSpeed: 0.004
+  twinkleStrength: 0.8
+  airglowIntensity: 0.0004
+  airglowColor: {r: 0.4, g: 0.6, b: 0.3, a: 1}
+  airglowHeight: 90
