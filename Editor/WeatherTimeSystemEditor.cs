@@ -502,7 +502,7 @@ namespace BlackHorizon.HorizonWeatherTime
         {
             var defaultPresets = EnsureDefaultPresets();
 
-            EnsureProfilesAreInAllowedList(defaultPresets);
+            ScanAndSyncProfiles();
             EnsureProceduralTextures();
             CheckAndConfigureSkyboxMaterial();
             CheckAndConfigureParticleAssets();
@@ -656,29 +656,56 @@ namespace BlackHorizon.HorizonWeatherTime
             }
         }
 
-        private void EnsureProfilesAreInAllowedList(List<WeatherProfile> profiles)
+        /// <summary>
+        /// Scans the user's preset folder for all WeatherProfile assets
+        /// and syncs the system's profile list to match.
+        /// </summary>
+        private void ScanAndSyncProfiles()
         {
-            if (profiles.Count == 0) return;
+            if (!Directory.Exists(PRESETS_DIR)) return;
 
-            List<UnityEngine.Object> allowedList;
-            if (_target.weatherProfilesList == null) allowedList = new List<UnityEngine.Object>();
-            else allowedList = new List<UnityEngine.Object>(_target.weatherProfilesList);
+            string[] guids = AssetDatabase.FindAssets("t:WeatherProfile",
+                new[] { PRESETS_DIR });
 
-            bool listModified = false;
-            foreach (var profile in profiles)
+            var foundProfiles = new List<UnityEngine.Object>();
+
+            foreach (string guid in guids)
             {
-                if (profile != null && !allowedList.Contains(profile))
+                string path = AssetDatabase.GUIDToAssetPath(guid);
+                WeatherProfile profile = AssetDatabase.LoadAssetAtPath<WeatherProfile>(path);
+                if (profile != null)
                 {
-                    allowedList.Add(profile);
-                    listModified = true;
+                    foundProfiles.Add(profile);
                 }
             }
 
-            if (listModified)
+            foundProfiles.Sort((a, b) =>
+                string.Compare(a.name, b.name, System.StringComparison.OrdinalIgnoreCase));
+
+            bool changed = false;
+            if (_target.weatherProfilesList == null
+                || _target.weatherProfilesList.Length != foundProfiles.Count)
             {
-                _target.weatherProfilesList = allowedList.ToArray();
+                changed = true;
+            }
+            else
+            {
+                for (int i = 0; i < foundProfiles.Count; i++)
+                {
+                    if (_target.weatherProfilesList[i] != foundProfiles[i])
+                    {
+                        changed = true;
+                        break;
+                    }
+                }
+            }
+
+            if (changed)
+            {
+                _target.weatherProfilesList = foundProfiles.ToArray();
                 EditorUtility.SetDirty(_target);
-                _target.Refresh();
+
+                Debug.Log($"<b><color=#33FF33>[SCAN]</color></b> <color=white>Found {foundProfiles.Count} weather profiles in {PRESETS_DIR}</color>");
             }
         }
 
