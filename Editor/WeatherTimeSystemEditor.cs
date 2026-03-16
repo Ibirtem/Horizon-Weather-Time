@@ -513,118 +513,107 @@ namespace BlackHorizon.HorizonWeatherTime
         }
 
         /// <summary>
-        /// Creates default weather presets if they don't exist.
+        /// Copies default weather presets from internal templates.
+        /// If templates don't exist yet, triggers their generation first.
         /// </summary>
         private List<WeatherProfile> EnsureDefaultPresets()
         {
+            string templatesPresetDir = "Assets/Horizon Weather & Time/Internal/Templates/Presets";
+            if (!Directory.Exists(templatesPresetDir)
+                || Directory.GetFiles(templatesPresetDir, "*.asset").Length == 0)
+            {
+                HorizonTemplateGenerator.Generate();
+            }
+
             var defaultPresets = new List<WeatherProfile>();
 
-            // 1. CLEAR PRESET
-            WeatherProfile clear = CheckAndCreatePreset("Default Clear", "Clear",
-                (p) =>
-                {
-                    p.skyProfile.turbidity = 5f;
-                });
-
-            // 2. SNOW PRESET
-            WeatherProfile snow = CheckAndCreatePreset("Default Snow", "Snow",
-                (p) =>
-                {
-                    p.lightingProfile.sunColorZenith = new Color(0.8f, 0.85f, 0.95f);
-                    p.lightingProfile.daySkyColor = new Color(0.5f, 0.6f, 0.7f);
-                    p.lightingProfile.dayEquatorColor = new Color(0.6f, 0.65f, 0.7f);
-                    p.lightingProfile.dayGroundColor = new Color(0.7f, 0.75f, 0.8f);
-                    p.effectsProfile.weatherEffectPrefab = Resources.Load<GameObject>("Prefabs/SnowEffect");
-                }, "Overcast", "Overcast");
-
-            // 3. RAIN PRESET
-            WeatherProfile rain = CheckAndCreatePreset("Default Rain", "Rain",
-                (p) =>
-                {
-                    p.lightingProfile.sunIntensity = 0.5f;
-                    p.lightingProfile.sunColorZenith = new Color(0.6f, 0.65f, 0.7f);
-                    p.lightingProfile.daySkyColor = new Color(0.3f, 0.35f, 0.4f);
-                    p.lightingProfile.dayEquatorColor = new Color(0.25f, 0.3f, 0.35f);
-                    p.lightingProfile.dayGroundColor = new Color(0.15f, 0.2f, 0.25f);
-                    p.cloudProfile.coverage = 0.85f;
-                    p.cloudProfile.density = 2.0f;
-                    p.cloudProfile.baseColor = new Color(0.3f, 0.3f, 0.35f);
-                    p.cloudProfile.shadowColor = new Color(0.1f, 0.1f, 0.15f);
-                    p.effectsProfile.weatherEffectPrefab = Resources.Load<GameObject>("Prefabs/RainEffect");
-                }, "Overcast", "Storm");
+            WeatherProfile clear = CopyTemplateIfMissing("Template_Clear", "Default Clear");
+            WeatherProfile rain = CopyTemplateIfMissing("Template_Rain", "Default Rain");
+            WeatherProfile snow = CopyTemplateIfMissing("Template_Snow", "Default Snow");
 
             if (clear != null) defaultPresets.Add(clear);
-            if (snow != null) defaultPresets.Add(snow);
             if (rain != null) defaultPresets.Add(rain);
+            if (snow != null) defaultPresets.Add(snow);
 
             return defaultPresets;
         }
 
-        // --- FACTORY METHODS ---
-
-        private T GetOrCreateModule<T>(string moduleFolder, string assetName) where T : ScriptableObject
+        /// <summary>
+        /// Copies a template preset and all its sub-modules into the user's working directory.
+        /// Skips if the output preset already exists (preserves user edits).
+        /// </summary>
+        private WeatherProfile CopyTemplateIfMissing(string templateName, string outputName)
         {
-            string dir = $"{MODULES_DIR}/{moduleFolder}";
-            if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+            string outputPath = $"{PRESETS_DIR}/{outputName}.asset";
+            WeatherProfile existing = AssetDatabase.LoadAssetAtPath<WeatherProfile>(outputPath);
+            if (existing != null) return existing;
 
-            string path = $"{dir}/{assetName}.asset";
-            T module = AssetDatabase.LoadAssetAtPath<T>(path);
-
-            if (module == null)
+            string templatePath = $"Assets/Horizon Weather & Time/Internal/Templates/Presets/{templateName}.asset";
+            WeatherProfile template = AssetDatabase.LoadAssetAtPath<WeatherProfile>(templatePath);
+            if (template == null)
             {
-                module = CreateInstance<T>();
-                AssetDatabase.CreateAsset(module, path);
+                Debug.LogWarning($"<b><color=#FF9900>[WARNING]</color></b> <color=white>[WeatherTimeSystem] Template '{templateName}' not found at {templatePath}</color>");
+                return null;
             }
-            return module;
-        }
 
-        private WeatherProfile CheckAndCreatePreset(string presetName, string weatherType, Action<WeatherProfile> onInitialize = null, string skyType = null, string cloudType = null)
-        {
             if (!Directory.Exists(PRESETS_DIR)) Directory.CreateDirectory(PRESETS_DIR);
+            if (!Directory.Exists(MODULES_DIR)) Directory.CreateDirectory(MODULES_DIR);
 
-            string path = $"{PRESETS_DIR}/{presetName}.asset";
-            WeatherProfile preset = AssetDatabase.LoadAssetAtPath<WeatherProfile>(path);
+            LightingProfile lp = CopyModuleIfNeeded(template.lightingProfile, "Lighting");
+            SkyProfile sp = CopyModuleIfNeeded(template.skyProfile, "Sky");
+            CloudProfile cp = CopyModuleIfNeeded(template.cloudProfile, "Clouds");
+            MoonProfile mp = CopyModuleIfNeeded(template.moonProfile, "Moon");
+            FogProfile fp = CopyModuleIfNeeded(template.fogProfile, "Fog");
+            EffectsProfile ep = CopyModuleIfNeeded(template.effectsProfile, "Effects");
 
-            if (preset == null)
-            {
-                preset = CreateInstance<WeatherProfile>();
-                preset.profileName = presetName;
+            WeatherProfile preset = ScriptableObject.CreateInstance<WeatherProfile>();
+            preset.profileName = outputName;
+            preset.lightingProfile = lp;
+            preset.skyProfile = sp;
+            preset.cloudProfile = cp;
+            preset.moonProfile = mp;
+            preset.fogProfile = fp;
+            preset.effectsProfile = ep;
 
-                skyType = skyType ?? weatherType;
-                cloudType = cloudType ?? weatherType;
-
-                preset.lightingProfile = GetOrCreateModule<LightingProfile>("Lighting", $"Lighting_{weatherType}");
-                preset.skyProfile = GetOrCreateModule<SkyProfile>("Sky", $"Sky_{skyType}");
-                preset.cloudProfile = GetOrCreateModule<CloudProfile>("Clouds", $"Clouds_{cloudType}");
-                preset.moonProfile = GetOrCreateModule<MoonProfile>("Moon", "Moon_Default");
-                preset.fogProfile = GetOrCreateModule<FogProfile>("Fog", $"Fog_{weatherType}");
-                preset.effectsProfile = GetOrCreateModule<EffectsProfile>("Effects", $"Effects_{weatherType}");
-
-                if (skyType == "Overcast")
-                {
-                    preset.skyProfile.turbidity = 10f;
-                    preset.skyProfile.exposure = 7.5f;
-                    preset.skyProfile.rayleigh = 0.5f;
-                }
-
-                onInitialize?.Invoke(preset);
-
-                EditorUtility.SetDirty(preset.lightingProfile);
-                EditorUtility.SetDirty(preset.skyProfile);
-                EditorUtility.SetDirty(preset.cloudProfile);
-                EditorUtility.SetDirty(preset.moonProfile);
-                EditorUtility.SetDirty(preset.fogProfile);
-                EditorUtility.SetDirty(preset.effectsProfile);
-
-                AssetDatabase.CreateAsset(preset, path);
-                EditorUtility.SetDirty(preset);
-
-                CheckAndAssignDeepSpaceAssets(preset);
-                CheckAndAssignDefaultMoonTexture(preset);
-            }
+            AssetDatabase.CreateAsset(preset, outputPath);
+            EditorUtility.SetDirty(preset);
 
             return preset;
         }
+
+        /// <summary>
+        /// Copies a single sub-module asset from templates to user's working directory.
+        /// If a module with the same name already exists, returns the existing one.
+        /// </summary>
+        private T CopyModuleIfNeeded<T>(T source, string folder) where T : ScriptableObject
+        {
+            if (source == null) return null;
+
+            string dir = $"{MODULES_DIR}/{folder}";
+            if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
+
+            string assetName = source.name;
+            if (string.IsNullOrEmpty(assetName))
+            {
+                string sourcePath = UnityEditor.AssetDatabase.GetAssetPath(source);
+                assetName = Path.GetFileNameWithoutExtension(sourcePath);
+            }
+            if (string.IsNullOrEmpty(assetName))
+            {
+                assetName = $"{folder}_Unknown";
+            }
+            string outputPath = $"{dir}/{assetName}.asset";
+            T existing = AssetDatabase.LoadAssetAtPath<T>(outputPath);
+            if (existing != null) return existing;
+
+            T copy = ScriptableObject.CreateInstance<T>();
+            EditorUtility.CopySerialized(source, copy);
+            AssetDatabase.CreateAsset(copy, outputPath);
+
+            return copy;
+        }
+
+        // --- FACTORY METHODS ---
 
         /// <summary>
         /// Automatically finds and assigns Star and Milky Way textures based on naming conventions.
