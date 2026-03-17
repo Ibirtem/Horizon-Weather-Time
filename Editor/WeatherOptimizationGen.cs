@@ -14,6 +14,7 @@ namespace BlackHorizon.HorizonWeatherTime
         public const string DEFAULT_CLOUD_NOISE_3D_PATH = "Assets/Horizon Weather & Time/Textures/Horizon_CloudNoise3D_Gen.asset";
         public const string DEFAULT_CIRRUS_NOISE_PATH = "Assets/Horizon Weather & Time/Textures/Horizon_CirrusNoise_Gen.png";
         public const string DEFAULT_CURL_NOISE_PATH = "Assets/Horizon Weather & Time/Textures/Horizon_CurlNoise_Gen.png";
+        public const string DEFAULT_TWINKLE_NOISE_3D_PATH = "Assets/Horizon Weather & Time/Textures/Generated/TwinkleNoise3D.asset";
 
         [MenuItem("Tools/Horizon/WeatherTime/Generate Optimization Maps")]
         public static void ShowWindow()
@@ -919,6 +920,121 @@ namespace BlackHorizon.HorizonWeatherTime
             Texture2D savedTex = SaveTexture(tex, path, true);
             EditorGUIUtility.PingObject(savedTex);
             return savedTex;
+        }
+
+        public static Texture3D GenerateTwinkleNoise3D(string path)
+        {
+            const int RES = 128;
+            const int BASE_CELLS = 4;
+            const int OCTAVES = 5;
+            const float PERSISTENCE = 0.6f;
+
+            Color[] colors = new Color[RES * RES * RES];
+
+            for (int z = 0; z < RES; z++)
+                for (int y = 0; y < RES; y++)
+                    for (int x = 0; x < RES; x++)
+                    {
+                        float nx = (float)x / RES;
+                        float ny = (float)y / RES;
+                        float nz = (float)z / RES;
+
+                        float value = TileableFBM3D(nx, ny, nz, BASE_CELLS, OCTAVES, PERSISTENCE);
+
+                        int idx = x + y * RES + z * RES * RES;
+                        colors[idx] = new Color(value, value, value, 1f);
+                    }
+
+            Texture3D tex = new Texture3D(RES, RES, RES, TextureFormat.R8, false);
+            tex.name = "TwinkleNoise3D";
+            tex.wrapMode = TextureWrapMode.Repeat;
+            tex.filterMode = FilterMode.Bilinear;
+            tex.SetPixels(colors);
+            tex.Apply(false, true);
+
+            string dir = System.IO.Path.GetDirectoryName(path);
+            if (!System.IO.Directory.Exists(dir))
+                System.IO.Directory.CreateDirectory(dir);
+
+            AssetDatabase.CreateAsset(tex, path);
+            AssetDatabase.SaveAssets();
+
+            Debug.Log($"<b><color=#33FF33>[GEN]</color></b> Twinkle Noise 3D generated ({RES}³, {OCTAVES} octaves)");
+            return tex;
+        }
+
+        // ---- Tileable 3D Value Noise ----
+
+        private static float TileableFBM3D(float nx, float ny, float nz,
+            int baseCells, int octaves, float persistence)
+        {
+            float value = 0f;
+            float amplitude = 1f;
+            float totalAmp = 0f;
+
+            for (int i = 0; i < octaves; i++)
+            {
+                int cells = baseCells * (1 << i);
+                float cx = nx * cells;
+                float cy = ny * cells;
+                float cz = nz * cells;
+
+                value += amplitude * TileableValueNoise3D(cx, cy, cz, cells);
+                totalAmp += amplitude;
+                amplitude *= persistence;
+            }
+
+            return value / totalAmp;
+        }
+
+        private static float TileableValueNoise3D(float x, float y, float z, int period)
+        {
+            int x0 = Mod(Mathf.FloorToInt(x), period);
+            int y0 = Mod(Mathf.FloorToInt(y), period);
+            int z0 = Mod(Mathf.FloorToInt(z), period);
+            int x1 = Mod(x0 + 1, period);
+            int y1 = Mod(y0 + 1, period);
+            int z1 = Mod(z0 + 1, period);
+
+            float fx = x - Mathf.Floor(x);
+            float fy = y - Mathf.Floor(y);
+            float fz = z - Mathf.Floor(z);
+
+            fx = fx * fx * fx * (fx * (fx * 6f - 15f) + 10f);
+            fy = fy * fy * fy * (fy * (fy * 6f - 15f) + 10f);
+            fz = fz * fz * fz * (fz * (fz * 6f - 15f) + 10f);
+
+            float c000 = IntHash(x0, y0, z0);
+            float c100 = IntHash(x1, y0, z0);
+            float c010 = IntHash(x0, y1, z0);
+            float c110 = IntHash(x1, y1, z0);
+            float c001 = IntHash(x0, y0, z1);
+            float c101 = IntHash(x1, y0, z1);
+            float c011 = IntHash(x0, y1, z1);
+            float c111 = IntHash(x1, y1, z1);
+
+            float x00 = Mathf.Lerp(c000, c100, fx);
+            float x10 = Mathf.Lerp(c010, c110, fx);
+            float x01 = Mathf.Lerp(c001, c101, fx);
+            float x11 = Mathf.Lerp(c011, c111, fx);
+
+            float y0v = Mathf.Lerp(x00, x10, fy);
+            float y1v = Mathf.Lerp(x01, x11, fy);
+
+            return Mathf.Lerp(y0v, y1v, fz);
+        }
+
+        private static float IntHash(int x, int y, int z)
+        {
+            int h = x * 374761393 + y * 668265263 + z * 1274126177;
+            h = (h ^ (h >> 13)) * 1274126177;
+            h = h ^ (h >> 16);
+            return (h & 0x7fffffff) / (float)0x7fffffff;
+        }
+
+        private static int Mod(int a, int m)
+        {
+            return ((a % m) + m) % m;
         }
 
         #endregion

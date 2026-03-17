@@ -111,7 +111,7 @@ namespace BlackHorizon.HorizonWeatherTime
             CheckAndAutoSetupVRChatIntegration();
 
             // Initial check for LUT
-            CheckLUTStatus();
+            CheckSkyManagerInternalTextures();
 
             EditorApplication.delayCall += () =>
             {
@@ -170,23 +170,37 @@ namespace BlackHorizon.HorizonWeatherTime
             serializedObject.ApplyModifiedProperties();
         }
 
-        private void CheckLUTStatus()
+        private void CheckSkyManagerInternalTextures()
         {
+            if (_skyManagerProp.objectReferenceValue == null) return;
+
+            var manager = (SkyManager)_skyManagerProp.objectReferenceValue;
+            var so = new SerializedObject(manager);
+
+            // --- Transmittance LUT ---
+            var lutProp = so.FindProperty("transmittanceLUT");
             var lut = AssetDatabase.LoadAssetAtPath<Texture2D>(AtmosphereLUTBaker.LUT_PATH);
 
             _lutMissing = (lut == null);
 
-            if (lut != null && _skyManagerProp.objectReferenceValue != null)
+            if (lut != null && lutProp.objectReferenceValue == null)
             {
-                var manager = (SkyManager)_skyManagerProp.objectReferenceValue;
-                var so = new SerializedObject(manager);
-                var prop = so.FindProperty("transmittanceLUT");
-                if (prop.objectReferenceValue == null)
+                lutProp.objectReferenceValue = lut;
+            }
+
+            // --- Twinkle Noise 3D ---
+            var twinkleProp = so.FindProperty("twinkleNoiseTex");
+            if (twinkleProp != null && twinkleProp.objectReferenceValue == null)
+            {
+                var tex = AssetDatabase.LoadAssetAtPath<Texture3D>(
+                    WeatherOptimizationGen.DEFAULT_TWINKLE_NOISE_3D_PATH);
+                if (tex != null)
                 {
-                    prop.objectReferenceValue = lut;
-                    so.ApplyModifiedProperties();
+                    twinkleProp.objectReferenceValue = tex;
                 }
             }
+
+            so.ApplyModifiedProperties();
         }
 
         private void GenerateAndAssignLUT()
@@ -612,7 +626,7 @@ namespace BlackHorizon.HorizonWeatherTime
             CheckAndConfigureSkyboxMaterial();
             CheckAndConfigureParticleAssets();
             CheckAndConfigureOcclusionCamera();
-            CheckLUTStatus();
+            CheckSkyManagerInternalTextures();
 
             AssetDatabase.SaveAssets();
         }
@@ -840,6 +854,13 @@ namespace BlackHorizon.HorizonWeatherTime
             {
                 WeatherOptimizationGen.GenerateCurlNoise(
                     WeatherOptimizationGen.DEFAULT_CURL_NOISE_PATH);
+            }
+
+            if (AssetDatabase.LoadAssetAtPath<Texture3D>(
+                WeatherOptimizationGen.DEFAULT_TWINKLE_NOISE_3D_PATH) == null)
+            {
+                WeatherOptimizationGen.GenerateTwinkleNoise3D(
+                    WeatherOptimizationGen.DEFAULT_TWINKLE_NOISE_3D_PATH);
             }
         }
 

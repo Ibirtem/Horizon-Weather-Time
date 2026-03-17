@@ -16,6 +16,7 @@ Shader "Horizon/Procedural Skybox"
         [HideInInspector] _TwinkleSharpness ("Twinkle Sharpness", Float) = 5.0
         [HideInInspector] _TwinkleSpeed ("Twinkle Speed", Float) = 0.004
         [HideInInspector] _TwinkleStrength ("Twinkle Strength", Range(0.0, 2.0)) = 0.8
+        [NoScaleOffset] _TwinkleNoiseTex ("Twinkle Noise 3D", 3D) = "gray" {}
 
         [Header(Airglow)]
         [HideInInspector] _AirglowIntensity ("Airglow Intensity", Float) = 0.0004
@@ -104,6 +105,7 @@ Shader "Horizon/Procedural Skybox"
             float _TwinkleSharpness;
             float _TwinkleSpeed;
             float _TwinkleStrength;
+            sampler3D _TwinkleNoiseTex;
 
             // Airglow
             float  _AirglowIntensity;
@@ -210,52 +212,6 @@ Shader "Horizon/Procedural Skybox"
             #define CLOUD_LIGHT_STEPS       4
             #define LIGHT_DENOM             21.0
             #define CLOUD_ABSORPTION_SCALE  0.002
-
-            // =====================================================================
-            //  UTILITY: 3D Gradient Noise & FBM
-            // =====================================================================
-
-            float3 hash(float3 p)
-            {
-                p = float3(
-                    dot(p, float3(127.1, 311.7, 74.7)),
-                    dot(p, float3(269.5, 183.3, 246.1)),
-                    dot(p, float3(113.5, 271.9, 124.6))
-                );
-                return -1.0 + 2.0 * frac(sin(p) * 43758.5453123);
-            }
-
-            float noise(float3 p)
-            {
-                float3 i = floor(p);
-                float3 f = frac(p);
-                f = f * f * (3.0 - 2.0 * f);
-
-                return lerp(
-                    lerp(lerp(dot(hash(i + float3(0,0,0)), f - float3(0,0,0)),
-                              dot(hash(i + float3(1,0,0)), f - float3(1,0,0)), f.x),
-                         lerp(dot(hash(i + float3(0,1,0)), f - float3(0,1,0)),
-                              dot(hash(i + float3(1,1,0)), f - float3(1,1,0)), f.x), f.y),
-                    lerp(lerp(dot(hash(i + float3(0,0,1)), f - float3(0,0,1)),
-                              dot(hash(i + float3(1,0,1)), f - float3(1,0,1)), f.x),
-                         lerp(dot(hash(i + float3(0,1,1)), f - float3(0,1,1)),
-                              dot(hash(i + float3(1,1,1)), f - float3(1,1,1)), f.x), f.y),
-                    f.z) * 0.5 + 0.5;
-            }
-
-            float fbm3(float3 p)
-            {
-                float value = 0.0, amp = 0.5, freq = 1.0;
-
-                [unroll]
-                for (int i = 0; i < 3; i++)
-                {
-                    value += amp * noise(p * freq);
-                    amp *= 0.5;
-                    freq *= 2.0;
-                }
-                return value;
-            }
 
             // =====================================================================
             //  UTILITY: Remap
@@ -689,9 +645,17 @@ Shader "Horizon/Procedural Skybox"
                     float mwLum = dot(mwRaw, float3(0.2126, 0.7152, 0.0722));
                     float3 mwCol = lerp(mwRaw, float3(mwLum, mwLum, mwLum), 0.4) * _MilkyWayIntensity;
 
-                    float twinkleNoise = fbm3(
-                        spaceDir * _TwinkleScale + float3(0, 0, frac(_Time.y * _TwinkleSpeed) * 100.0)
-                    );
+                    // #define TWINKLE_DEBUG 1
+
+                    float3 twinkleCoord = spaceDir * (_TwinkleScale * 0.2);
+                    twinkleCoord.z += frac(_Time.y * _TwinkleSpeed);
+                    float twinkleNoise = tex3Dlod(_TwinkleNoiseTex, float4(twinkleCoord, 0)).r;
+
+                    #if TWINKLE_DEBUG
+                        finalColor = float3(twinkleNoise, twinkleNoise, twinkleNoise);
+                        return half4(finalColor, 1.0);
+                    #endif
+
                     float halfWidth = 0.5 / _TwinkleSharpness;
                     float twinkleMask = smoothstep(0.5 - halfWidth, 0.5 + halfWidth, twinkleNoise) * _TwinkleStrength;
                     float twinkleMultiplier = 1.0 + (twinkleMask - _TwinkleStrength * 0.5) * 2.0;

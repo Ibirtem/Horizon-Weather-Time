@@ -54,8 +54,8 @@ namespace BlackHorizon.HorizonWeatherTime
         [Range(0.1f, 20f)]
         public float twinkleSharpness = 4f;
 
-        [Range(0f, 0.05f)]
-        public float twinkleSpeed = 0.004f;
+        [Range(0f, 5.0f)]
+        public float twinkleSpeed = 0.06f;
 
         [Range(0f, 2f)]
         public float twinkleStrength = 0.8f;

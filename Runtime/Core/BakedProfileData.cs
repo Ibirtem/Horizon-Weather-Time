@@ -58,7 +58,7 @@ namespace BlackHorizon.HorizonWeatherTime
         public float milkyWayIntensity = 0.005f;
         public float twinkleScale = 150f;
         public float twinkleSharpness = 4f;
-        public float twinkleSpeed = 0.004f;
+        public float twinkleSpeed = 0.06f;
         public float twinkleStrength = 0.8f;
 
         // =====================================================

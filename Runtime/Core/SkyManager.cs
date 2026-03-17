@@ -26,6 +26,10 @@ namespace BlackHorizon.HorizonWeatherTime
 
         private int TransmittanceLUT_ID;
 
+        [Tooltip("Pre-baked 3D noise for star twinkle.")]
+        public Texture3D twinkleNoiseTex;
+        private int TwinkleNoiseTexID;
+
         private Material _skyboxInstance;
         private Material _originalSkybox;
         private Texture _currentStarsTexture;
@@ -146,6 +150,7 @@ namespace BlackHorizon.HorizonWeatherTime
             FogBlendID = VRCShader.PropertyToID("_HorizonFogBlend");
 
             TransmittanceLUT_ID = VRCShader.PropertyToID("_TransmittanceLUT");
+            TwinkleNoiseTexID = VRCShader.PropertyToID("_TwinkleNoiseTex");
 
             // Night Sky (Airglow)
             AirglowIntensityID = VRCShader.PropertyToID("_AirglowIntensity");
@@ -283,6 +288,7 @@ namespace BlackHorizon.HorizonWeatherTime
 
             if (starsCube != null) _skyboxInstance.SetTexture("_StarsCube", starsCube);
             if (mwCube != null) _skyboxInstance.SetTexture("_MilkyWayCube", mwCube);
+            if (twinkleNoiseTex != null) _skyboxInstance.SetTexture(TwinkleNoiseTexID, twinkleNoiseTex);
 
             _skyboxInstance.SetVector(StarfieldRotationID, starfieldRotation);
 
