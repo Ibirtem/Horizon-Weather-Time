@@ -135,16 +135,13 @@ namespace BlackHorizon.HorizonWeatherTime
         // =====================================================
 #if !COMPILER_UDONSHARP && UNITY_EDITOR
         /// <summary>
-        /// Copies all data from a WeatherProfile's sub-profiles into this flat container.
+        /// Copies data from any single sub-profile module.
         /// </summary>
-        public void CopyFromProfile(WeatherProfile wp)
+        public void CopyFromModule(ScriptableObject module)
         {
-            if (wp == null) return;
-            profileName = wp.profileName;
+            if (module == null) return;
 
-            // ----- LIGHTING -----
-            var lp = wp.lightingProfile;
-            if (lp != null)
+            if (module is LightingProfile lp)
             {
                 sunColorZenith = lp.sunColorZenith;
                 sunColorHorizon = lp.sunColorHorizon;
@@ -158,11 +155,10 @@ namespace BlackHorizon.HorizonWeatherTime
                 nightSkyColor = lp.nightSkyColor;
                 nightEquatorColor = lp.nightEquatorColor;
                 nightGroundColor = lp.nightGroundColor;
+                return;
             }
 
-            // ----- SKY -----
-            var sp = wp.skyProfile;
-            if (sp != null)
+            if (module is SkyProfile sp)
             {
                 rayleigh = sp.rayleigh;
                 turbidity = sp.turbidity;
@@ -184,20 +180,10 @@ namespace BlackHorizon.HorizonWeatherTime
                 airglowIntensity = sp.airglowIntensity;
                 airglowColor = sp.airglowColor;
                 airglowHeight = sp.airglowHeight;
+                return;
             }
 
-            // ----- MOON -----
-            var mp = wp.moonProfile;
-            if (mp != null)
-            {
-                moonTexture = mp.moonTexture;
-                moonSize = mp.moonSize;
-                moonTint = mp.moonColor;
-            }
-
-            // ----- CLOUDS -----
-            var cp = wp.cloudProfile;
-            if (cp != null)
+            if (module is CloudProfile cp)
             {
                 cloudNoiseTexture = cp.cloudNoiseTexture;
                 weatherMapTexture = cp.weatherMapTexture;
@@ -220,11 +206,18 @@ namespace BlackHorizon.HorizonWeatherTime
                 cirrusScale = cp.cirrusScale;
                 cirrusWindSpeed = cp.cirrusWindSpeed;
                 cirrusTint = cp.cirrusTint;
+                return;
             }
 
-            // ----- FOG -----
-            var fp = wp.fogProfile;
-            if (fp != null)
+            if (module is MoonProfile mp)
+            {
+                moonTexture = mp.moonTexture;
+                moonSize = mp.moonSize;
+                moonTint = mp.moonColor;
+                return;
+            }
+
+            if (module is FogProfile fp)
             {
                 fogEnabled = fp.enabled;
                 fogMode = (int)fp.fogMode;
@@ -234,26 +227,34 @@ namespace BlackHorizon.HorizonWeatherTime
                 fogStartDistance = fp.startDistance;
                 fogEndDistance = fp.endDistance;
                 fogSkyBlend = fp.skyboxBlendIntegrity;
-            }
-            else
-            {
-                fogEnabled = false;
+                return;
             }
 
-            // ----- EFFECTS -----
-            var ep = wp.effectsProfile;
-            if (ep != null)
+            if (module is EffectsProfile ep)
             {
                 weatherEffectPrefab = ep.weatherEffectPrefab;
                 spawnHeightOffset = ep.spawnHeightOffset;
                 volumeBounds = ep.volumeBounds;
                 particleSize = ep.particleSize;
                 weatherDensity = ep.weatherDensity;
+                return;
             }
-            else
-            {
-                weatherEffectPrefab = null;
-            }
+        }
+
+        /// <summary>
+        /// Copies all data from a WeatherProfile by dispatching each sub-profile to CopyFromModule.
+        /// </summary>
+        public void CopyFromProfile(WeatherProfile wp)
+        {
+            if (wp == null) return;
+            profileName = wp.profileName;
+
+            CopyFromModule(wp.lightingProfile);
+            CopyFromModule(wp.skyProfile);
+            CopyFromModule(wp.cloudProfile);
+            CopyFromModule(wp.moonProfile);
+            CopyFromModule(wp.fogProfile);
+            CopyFromModule(wp.effectsProfile);
         }
 #endif
     }

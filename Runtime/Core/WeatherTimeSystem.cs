@@ -103,6 +103,13 @@ namespace BlackHorizon.HorizonWeatherTime
         [Tooltip("Do not edit manually. Populated by the baking system.")]
         public BakedProfileData[] bakedProfiles;
 
+        [HideInInspector] public BakedProfileData[] bakedLightingModules;
+        [HideInInspector] public BakedProfileData[] bakedSkyModules;
+        [HideInInspector] public BakedProfileData[] bakedCloudModules;
+        [HideInInspector] public BakedProfileData[] bakedMoonModules;
+        [HideInInspector] public BakedProfileData[] bakedFogModules;
+        [HideInInspector] public BakedProfileData[] bakedEffectsModules;
+
         // =========================================================
 
         [Header("System References")]
