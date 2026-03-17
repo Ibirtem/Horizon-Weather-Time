@@ -113,8 +113,6 @@ namespace BlackHorizon.HorizonWeatherTime
             // Initial check for LUT
             CheckLUTStatus();
 
-            EditorApplication.delayCall += () => { if (_target != null) _target.Refresh(); };
-
             EditorApplication.delayCall += () =>
             {
                 if (_target != null)
@@ -123,6 +121,8 @@ namespace BlackHorizon.HorizonWeatherTime
                     {
                         WeatherBakeUtility.BakeAllProfiles(_target);
                     }
+                    ScanModuleFolders();
+                    WeatherBakeUtility.BakeModules(_target, _discoveredModules);
                     _target.Refresh();
                 }
             };
@@ -331,58 +331,66 @@ namespace BlackHorizon.HorizonWeatherTime
         {
             HorizonEditorUtils.DrawSectionHeader("WEATHER PRESETS & LAYERS");
 
+            // --- MASTER PRESET ---
             if (_target.weatherProfilesList != null && _target.weatherProfilesList.Length > 0)
             {
-                var profileNames = _target.weatherProfilesList.Select(p => p != null ? p.name : " (None)").ToArray();
-                ValidateIndices(profileNames.Length);
+                var presetNames = _target.weatherProfilesList
+                    .Select(p => p != null ? p.name : "(None)").ToArray();
+                ValidateIndices(presetNames.Length);
 
                 EditorGUILayout.BeginVertical(EditorStyles.helpBox);
 
-                // --- MASTER PRESET ---
                 EditorGUI.BeginChangeCheck();
-                int newMaster = EditorGUILayout.Popup("Master Preset", _currentProfileIndexProp.intValue, profileNames);
+                int newMaster = EditorGUILayout.Popup("Master Preset", _currentProfileIndexProp.intValue, presetNames);
                 if (EditorGUI.EndChangeCheck())
                 {
                     ApplyMasterPreset(newMaster);
                 }
-
-                // --- LAYER OVERRIDES ---
-                EditorGUILayout.Space(2);
-
-                GUILayout.Label("Layer Overrides", EditorStyles.boldLabel);
-                EditorGUI.indentLevel++;
-                EditorGUI.BeginChangeCheck();
-
-                DrawLayerDropdown("Lighting", _lightingIndexProp, profileNames);
-                DrawLayerDropdown("Sky & Stars", _skyIndexProp, profileNames);
-                DrawLayerDropdown("Clouds", _cloudIndexProp, profileNames);
-                DrawLayerDropdown("Moon", _moonIndexProp, profileNames);
-                DrawLayerDropdown("Fog", _fogIndexProp, profileNames);
-                DrawLayerDropdown("Effects", _effectsIndexProp, profileNames);
-
-                if (EditorGUI.EndChangeCheck())
-                {
-                    serializedObject.ApplyModifiedProperties();
-                    _target.Refresh();
-                }
-                EditorGUI.indentLevel--;
 
                 EditorGUILayout.EndVertical();
                 EditorGUILayout.Space(4);
             }
             else
             {
-                EditorGUILayout.HelpBox("No Profiles Loaded! Add Weather Profiles below.", MessageType.Warning);
+                EditorGUILayout.HelpBox("No Presets found. Add Weather Profiles to the Presets folder.", MessageType.Warning);
             }
 
+            // --- PER-MODULE LAYER OVERRIDES ---
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            GUILayout.Label("Layer Overrides", EditorStyles.boldLabel);
+            EditorGUI.indentLevel++;
+
+            EditorGUI.BeginChangeCheck();
+
+            DrawModuleDropdown("Lighting", _lightingIndexProp, "Lighting");
+            DrawModuleDropdown("Sky & Stars", _skyIndexProp, "Sky");
+            DrawModuleDropdown("Clouds", _cloudIndexProp, "Clouds");
+            DrawModuleDropdown("Moon", _moonIndexProp, "Moon");
+            DrawModuleDropdown("Fog", _fogIndexProp, "Fog");
+            DrawModuleDropdown("Effects", _effectsIndexProp, "Effects");
+
+            if (EditorGUI.EndChangeCheck())
+            {
+                serializedObject.ApplyModifiedProperties();
+                _target.Refresh();
+            }
+
+            EditorGUI.indentLevel--;
+            EditorGUILayout.EndVertical();
+
+            EditorGUILayout.Space(4);
+
+            // --- PROFILES LIST & BAKE ---
             EditorGUILayout.PropertyField(_allowedWeatherProfilesProp, new GUIContent("Loaded Profiles List"), true);
 
             EditorGUILayout.Space(4);
             EditorGUILayout.BeginHorizontal();
 
-            if (GUILayout.Button("🔨 Force Rebake All Profiles", GUILayout.Height(25)))
+            if (GUILayout.Button("🔨 Force Rebake All", GUILayout.Height(25)))
             {
                 WeatherBakeUtility.BakeAllProfiles(_target);
+                ScanModuleFolders();
+                WeatherBakeUtility.BakeModules(_target, _discoveredModules);
                 _target.Refresh();
             }
 
@@ -390,12 +398,16 @@ namespace BlackHorizon.HorizonWeatherTime
             int bakedCount = bakedProp != null ? bakedProp.arraySize : 0;
             int profileCount = _target.weatherProfilesList != null ? _target.weatherProfilesList.Length : 0;
 
+            int moduleCount = 0;
+            foreach (var kvp in _discoveredModules)
+                moduleCount += kvp.Value.Count;
+
             Color statusColor = (bakedCount == profileCount && bakedCount > 0)
                 ? new Color(0.5f, 1f, 0.5f)
                 : new Color(1f, 0.7f, 0.4f);
 
             GUI.color = statusColor;
-            GUILayout.Label($"Baked: {bakedCount}/{profileCount}", EditorStyles.miniLabel, GUILayout.Width(80));
+            GUILayout.Label($"P:{bakedCount}/{profileCount} M:{moduleCount}", EditorStyles.miniLabel, GUILayout.Width(100));
             GUI.color = Color.white;
 
             EditorGUILayout.EndHorizontal();
@@ -414,17 +426,33 @@ namespace BlackHorizon.HorizonWeatherTime
 
         // --- HELPERS ---
 
-        private void ValidateIndices(int length)
+        private void ValidateIndices(int presetCount)
         {
-            int maxIdx = Mathf.Max(0, length - 1);
+            ClampProp(_currentProfileIndexProp, Mathf.Max(0, presetCount - 1));
 
-            ClampProp(_currentProfileIndexProp, maxIdx);
-            ClampProp(_lightingIndexProp, maxIdx);
-            ClampProp(_skyIndexProp, maxIdx);
-            ClampProp(_cloudIndexProp, maxIdx);
-            ClampProp(_moonIndexProp, maxIdx);
-            ClampProp(_fogIndexProp, maxIdx);
-            ClampProp(_effectsIndexProp, maxIdx);
+            foreach (var (folder, _) in MODULE_TYPES)
+            {
+                int moduleMax = _discoveredModules.ContainsKey(folder)
+                    ? Mathf.Max(0, _discoveredModules[folder].Count - 1)
+                    : 0;
+
+                SerializedProperty prop = GetIndexPropForFolder(folder);
+                if (prop != null) ClampProp(prop, moduleMax);
+            }
+        }
+
+        private SerializedProperty GetIndexPropForFolder(string folder)
+        {
+            switch (folder)
+            {
+                case "Lighting": return _lightingIndexProp;
+                case "Sky": return _skyIndexProp;
+                case "Clouds": return _cloudIndexProp;
+                case "Moon": return _moonIndexProp;
+                case "Fog": return _fogIndexProp;
+                case "Effects": return _effectsIndexProp;
+                default: return null;
+            }
         }
 
         private static void ClampProp(SerializedProperty prop, int max)
@@ -439,17 +467,42 @@ namespace BlackHorizon.HorizonWeatherTime
         private void ApplyMasterPreset(int newIndex)
         {
             _currentProfileIndexProp.intValue = newIndex;
-            _lightingIndexProp.intValue = newIndex;
-            _skyIndexProp.intValue = newIndex;
-            _cloudIndexProp.intValue = newIndex;
-            _moonIndexProp.intValue = newIndex;
-            _fogIndexProp.intValue = newIndex;
-            _effectsIndexProp.intValue = newIndex;
+
+            if (_target.weatherProfilesList != null
+                && newIndex < _target.weatherProfilesList.Length)
+            {
+                var wp = _target.weatherProfilesList[newIndex] as WeatherProfile;
+                if (wp != null)
+                {
+                    _lightingIndexProp.intValue = FindModuleIndex("Lighting", wp.lightingProfile);
+                    _skyIndexProp.intValue = FindModuleIndex("Sky", wp.skyProfile);
+                    _cloudIndexProp.intValue = FindModuleIndex("Clouds", wp.cloudProfile);
+                    _moonIndexProp.intValue = FindModuleIndex("Moon", wp.moonProfile);
+                    _fogIndexProp.intValue = FindModuleIndex("Fog", wp.fogProfile);
+                    _effectsIndexProp.intValue = FindModuleIndex("Effects", wp.effectsProfile);
+                }
+            }
 
             serializedObject.ApplyModifiedProperties();
-            _target.SetWeatherProfile(newIndex);
-            EditorUtility.SetDirty(_target);
             _target.Refresh();
+            EditorUtility.SetDirty(_target);
+        }
+
+        /// <summary>
+        /// Finds the index of a module in the discovered list by matching asset name.
+        /// </summary>
+        private int FindModuleIndex(string folder, ScriptableObject module)
+        {
+            if (module == null) return 0;
+            if (!_discoveredModules.ContainsKey(folder)) return 0;
+
+            var list = _discoveredModules[folder];
+            for (int i = 0; i < list.Count; i++)
+            {
+                if (list[i] != null && list[i].name == module.name)
+                    return i;
+            }
+            return 0;
         }
 
         /// <summary>
@@ -476,6 +529,29 @@ namespace BlackHorizon.HorizonWeatherTime
                     indexProp.intValue = _currentProfileIndexProp.intValue;
                     GUI.FocusControl(null);
                 }
+            }
+
+            EditorGUILayout.EndHorizontal();
+        }
+
+        /// <summary>
+        /// Draws a dropdown that lists discovered modules of a specific type.
+        /// Shows module asset names, not preset names.
+        /// </summary>
+        private void DrawModuleDropdown(string label, SerializedProperty indexProp, string folder)
+        {
+            string[] names = GetModuleNames(folder);
+            int maxIndex = Mathf.Max(0, names.Length - 1);
+
+            if (indexProp.intValue > maxIndex)
+                indexProp.intValue = 0;
+
+            EditorGUILayout.BeginHorizontal();
+
+            int newIndex = EditorGUILayout.Popup(label, indexProp.intValue, names);
+            if (newIndex != indexProp.intValue)
+            {
+                indexProp.intValue = newIndex;
             }
 
             EditorGUILayout.EndHorizontal();
