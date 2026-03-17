@@ -54,13 +54,13 @@ namespace BlackHorizon.HorizonWeatherTime
         /// Bakes all discovered modules. Completely generic — no per-type copy code.
         /// Adding a new module type only requires a new case in AssignModuleArray.
         /// </summary>
-        public static void BakeModules(WeatherTimeSystem system,
-            Dictionary<string, List<ScriptableObject>> discoveredModules)
+        public static void BakeModules(WeatherTimeSystem system, Dictionary<string, List<ScriptableObject>> discoveredModules)
         {
             if (system == null || _isBaking) return;
             if (discoveredModules == null || discoveredModules.Count == 0) return;
 
             _isBaking = true;
+            int totalBakedCount = 0; 
 
             try
             {
@@ -75,25 +75,30 @@ namespace BlackHorizon.HorizonWeatherTime
                     go.transform.localPosition = Vector3.zero;
                     container = go.transform;
                 }
-                container.gameObject.hideFlags = HideFlags.HideInHierarchy;
+                
+                container.gameObject.hideFlags = HideFlags.None;
 
                 for (int i = container.childCount - 1; i >= 0; i--)
                     Object.DestroyImmediate(container.GetChild(i).gameObject);
-
-                int total = 0;
 
                 foreach (var kvp in discoveredModules)
                 {
                     var array = BakeModuleList(container, kvp.Key, kvp.Value);
                     AssignModuleArray(system, kvp.Key, array);
-                    total += kvp.Value.Count;
+                    
+                    totalBakedCount += array.Length;
                 }
 
                 UpdatePresetMappings(system, discoveredModules);
 
                 EditorUtility.SetDirty(system);
+                AssetDatabase.SaveAssets();
 
-                Debug.Log($"<b><color=#33FF33>[BAKE]</color></b> <color=white>Baked {total} modules across {discoveredModules.Count} categories.</color>", system);
+                Debug.Log($"<b><color=#33FF33>[BAKE]</color></b> <color=white>Baked {totalBakedCount} modules across {discoveredModules.Count} categories.</color>", system);
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogError($"<b><color=#FF3333>[BAKE ERROR]</color></b> Critical error during baking: {e.Message}\n{e.StackTrace}");
             }
             finally
             {
@@ -104,23 +109,22 @@ namespace BlackHorizon.HorizonWeatherTime
         /// <summary>
         /// Bakes a list of modules.
         /// </summary>
-        private static BakedProfileData[] BakeModuleList(
-            Transform container, string groupName,
-            List<ScriptableObject> modules)
+        private static BakedProfileData[] BakeModuleList(Transform container, string groupName, List<ScriptableObject> modules)
         {
-            if (modules == null || modules.Count == 0)
-                return new BakedProfileData[0];
+            if (modules == null || modules.Count == 0) return new BakedProfileData[0];
 
             var groupObj = new GameObject($"_{groupName}");
             groupObj.transform.SetParent(container);
             groupObj.transform.localPosition = Vector3.zero;
             groupObj.hideFlags = HideFlags.HideInHierarchy;
 
-            var result = new BakedProfileData[modules.Count];
+            var resultList = new System.Collections.Generic.List<BakedProfileData>();
 
             for (int i = 0; i < modules.Count; i++)
             {
-                var child = new GameObject($"_{i}_{modules[i].name}");
+                if (modules[i] == null) continue;
+
+                var child = new GameObject($"_{resultList.Count}_{modules[i].name}");
                 child.transform.SetParent(groupObj.transform);
                 child.transform.localPosition = Vector3.zero;
                 child.hideFlags = HideFlags.HideInHierarchy;
@@ -129,10 +133,11 @@ namespace BlackHorizon.HorizonWeatherTime
                 baked.profileName = modules[i].name;
                 baked.CopyFromModule(modules[i]);
 
-                result[i] = baked;
+                EditorUtility.SetDirty(baked);
+                resultList.Add(baked);
             }
 
-            return result;
+            return resultList.ToArray();
         }
 
         /// <summary>

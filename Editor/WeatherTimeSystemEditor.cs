@@ -557,6 +557,43 @@ namespace BlackHorizon.HorizonWeatherTime
             }
         }
 
+        private void ScanAndSyncProfiles()
+        {
+            if (!Directory.Exists(PRESETS_DIR)) return;
+
+            string[] guids = AssetDatabase.FindAssets("t:WeatherProfile", new[] { PRESETS_DIR });
+            var foundProfiles = new List<UnityEngine.Object>();
+
+            foreach (string guid in guids)
+            {
+                string path = AssetDatabase.GUIDToAssetPath(guid);
+                WeatherProfile profile = AssetDatabase.LoadAssetAtPath<WeatherProfile>(path);
+                if (profile != null) foundProfiles.Add(profile);
+            }
+
+            foundProfiles.Sort((a, b) => string.Compare(a.name, b.name, StringComparison.OrdinalIgnoreCase));
+
+            bool changed = false;
+            if (_target.weatherProfilesList == null || _target.weatherProfilesList.Length != foundProfiles.Count)
+            {
+                changed = true;
+            }
+            else
+            {
+                for (int i = 0; i < foundProfiles.Count; i++)
+                {
+                    if (_target.weatherProfilesList[i] != foundProfiles[i]) { changed = true; break; }
+                }
+            }
+
+            if (changed)
+            {
+                _target.weatherProfilesList = foundProfiles.ToArray();
+                EditorUtility.SetDirty(_target);
+                _modulesCacheDirty = true;
+            }
+        }
+
         // ================================================================
         // DEPENDENCY & ASSET CHECKS
         // ================================================================
@@ -567,6 +604,7 @@ namespace BlackHorizon.HorizonWeatherTime
 
         private void CheckAndConfigureDependencies()
         {
+            ScanAndSyncProfiles();
             EnsureDefaultPresets();
 
             EnsureProceduralTextures();
