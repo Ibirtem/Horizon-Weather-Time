@@ -57,18 +57,18 @@ namespace BlackHorizon.HorizonWeatherTime
 
         private bool _lutMissing = false;
 
-        private static readonly (string folder, Type type)[] MODULE_TYPES =
-        {
-            ("Lighting", typeof(LightingProfile)),
-            ("Sky",      typeof(SkyProfile)),
-            ("Clouds",   typeof(CloudProfile)),
-            ("Moon",     typeof(MoonProfile)),
-            ("Fog",      typeof(FogProfile)),
-            ("Effects",  typeof(EffectsProfile)),
-        };
+        private Dictionary<string, List<ScriptableObject>> _cachedDiscoveredModules;
+        private bool _modulesCacheDirty = true;
 
-        private Dictionary<string, List<ScriptableObject>> _discoveredModules
-            = new Dictionary<string, List<ScriptableObject>>();
+        private Dictionary<string, List<ScriptableObject>> GetDiscoveredModules()
+        {
+            if (_modulesCacheDirty || _cachedDiscoveredModules == null)
+            {
+                _cachedDiscoveredModules = WeatherBakeUtility.ScanModuleFolders();
+                _modulesCacheDirty = false;
+            }
+            return _cachedDiscoveredModules;
+        }
 
         private void OnEnable()
         {
@@ -117,13 +117,17 @@ namespace BlackHorizon.HorizonWeatherTime
             {
                 if (_target != null)
                 {
-                    if (WeatherBakeUtility.NeedsRebake(_target))
+                    var discovered = WeatherBakeUtility.ScanModuleFolders();
+                    bool needsModuleBake = WeatherBakeUtility.NeedsRebakeModules(_target, discovered);
+
+                    if (needsModuleBake)
                     {
-                        WeatherBakeUtility.BakeAllProfiles(_target);
+                        WeatherBakeUtility.BakeModules(_target, discovered);
                     }
-                    ScanModuleFolders();
-                    WeatherBakeUtility.BakeModules(_target, _discoveredModules);
+
                     _target.Refresh();
+
+                    UnityEditor.SceneView.RepaintAll();
                 }
             };
         }
@@ -131,6 +135,8 @@ namespace BlackHorizon.HorizonWeatherTime
         public override void OnInspectorGUI()
         {
             serializedObject.Update();
+
+            var discoveredModules = GetDiscoveredModules();
 
             // 1. HEADER
             HorizonEditorUtils.DrawHorizonHeader("Weather & Time System", this);
@@ -154,7 +160,7 @@ namespace BlackHorizon.HorizonWeatherTime
 
             // 2. SECTIONS
             DrawTimelineSection();
-            DrawWeatherPresetsSection();
+            DrawWeatherPresetsSection(discoveredModules);
             DrawCoreModulesSection();
 
             // 3. FOOTER
@@ -324,10 +330,11 @@ namespace BlackHorizon.HorizonWeatherTime
             {
                 serializedObject.ApplyModifiedProperties();
                 _target.Refresh();
+                UnityEditor.SceneView.RepaintAll();
             }
         }
 
-        private void DrawWeatherPresetsSection()
+        private void DrawWeatherPresetsSection(Dictionary<string, List<ScriptableObject>> discoveredModules)
         {
             HorizonEditorUtils.DrawSectionHeader("WEATHER PRESETS & LAYERS");
 
@@ -336,51 +343,42 @@ namespace BlackHorizon.HorizonWeatherTime
             {
                 var presetNames = _target.weatherProfilesList
                     .Select(p => p != null ? p.name : "(None)").ToArray();
-                ValidateIndices(presetNames.Length);
+
+                ValidateIndices(presetNames.Length, discoveredModules);
 
                 EditorGUILayout.BeginVertical(EditorStyles.helpBox);
-
                 EditorGUI.BeginChangeCheck();
                 int newMaster = EditorGUILayout.Popup("Master Preset", _currentProfileIndexProp.intValue, presetNames);
                 if (EditorGUI.EndChangeCheck())
                 {
-                    ApplyMasterPreset(newMaster);
+                    ApplyMasterPreset(newMaster, discoveredModules);
                 }
-
                 EditorGUILayout.EndVertical();
                 EditorGUILayout.Space(4);
-            }
-            else
-            {
-                EditorGUILayout.HelpBox("No Presets found. Add Weather Profiles to the Presets folder.", MessageType.Warning);
             }
 
             // --- PER-MODULE LAYER OVERRIDES ---
             EditorGUILayout.BeginVertical(EditorStyles.helpBox);
             GUILayout.Label("Layer Overrides", EditorStyles.boldLabel);
             EditorGUI.indentLevel++;
-
             EditorGUI.BeginChangeCheck();
 
-            DrawModuleDropdown("Lighting", _lightingIndexProp, "Lighting");
-            DrawModuleDropdown("Sky & Stars", _skyIndexProp, "Sky");
-            DrawModuleDropdown("Clouds", _cloudIndexProp, "Clouds");
-            DrawModuleDropdown("Moon", _moonIndexProp, "Moon");
-            DrawModuleDropdown("Fog", _fogIndexProp, "Fog");
-            DrawModuleDropdown("Effects", _effectsIndexProp, "Effects");
+            DrawModuleDropdown("Lighting", _lightingIndexProp, "Lighting", discoveredModules);
+            DrawModuleDropdown("Sky & Stars", _skyIndexProp, "Sky", discoveredModules);
+            DrawModuleDropdown("Clouds", _cloudIndexProp, "Clouds", discoveredModules);
+            DrawModuleDropdown("Moon", _moonIndexProp, "Moon", discoveredModules);
+            DrawModuleDropdown("Fog", _fogIndexProp, "Fog", discoveredModules);
+            DrawModuleDropdown("Effects", _effectsIndexProp, "Effects", discoveredModules);
 
             if (EditorGUI.EndChangeCheck())
             {
                 serializedObject.ApplyModifiedProperties();
                 _target.Refresh();
             }
-
             EditorGUI.indentLevel--;
             EditorGUILayout.EndVertical();
 
             EditorGUILayout.Space(4);
-
-            // --- PROFILES LIST & BAKE ---
             EditorGUILayout.PropertyField(_allowedWeatherProfilesProp, new GUIContent("Loaded Profiles List"), true);
 
             EditorGUILayout.Space(4);
@@ -388,28 +386,19 @@ namespace BlackHorizon.HorizonWeatherTime
 
             if (GUILayout.Button("🔨 Force Rebake All", GUILayout.Height(25)))
             {
-                WeatherBakeUtility.BakeAllProfiles(_target);
-                ScanModuleFolders();
-                WeatherBakeUtility.BakeModules(_target, _discoveredModules);
+                _modulesCacheDirty = true;
+                WeatherBakeUtility.BakeModules(_target, GetDiscoveredModules());
                 _target.Refresh();
             }
 
-            var bakedProp = serializedObject.FindProperty("bakedProfiles");
-            int bakedCount = bakedProp != null ? bakedProp.arraySize : 0;
             int profileCount = _target.weatherProfilesList != null ? _target.weatherProfilesList.Length : 0;
-
             int moduleCount = 0;
-            foreach (var kvp in _discoveredModules)
-                moduleCount += kvp.Value.Count;
+            foreach (var kvp in discoveredModules) moduleCount += kvp.Value.Count;
 
-            Color statusColor = (bakedCount == profileCount && bakedCount > 0)
-                ? new Color(0.5f, 1f, 0.5f)
-                : new Color(1f, 0.7f, 0.4f);
-
-            GUI.color = statusColor;
-            GUILayout.Label($"P:{bakedCount}/{profileCount} M:{moduleCount}", EditorStyles.miniLabel, GUILayout.Width(100));
+            bool isBaked = _target.bakedLightingModules != null && _target.bakedLightingModules.Length > 0;
+            GUI.color = isBaked ? new Color(0.5f, 1f, 0.5f) : new Color(1f, 0.7f, 0.4f);
+            GUILayout.Label($"P:{profileCount} M:{moduleCount}", EditorStyles.miniLabel, GUILayout.Width(100));
             GUI.color = Color.white;
-
             EditorGUILayout.EndHorizontal();
         }
 
@@ -426,14 +415,14 @@ namespace BlackHorizon.HorizonWeatherTime
 
         // --- HELPERS ---
 
-        private void ValidateIndices(int presetCount)
+        private void ValidateIndices(int presetCount, Dictionary<string, List<ScriptableObject>> discoveredModules)
         {
             ClampProp(_currentProfileIndexProp, Mathf.Max(0, presetCount - 1));
 
-            foreach (var (folder, _) in MODULE_TYPES)
+            foreach (var (folder, _) in WeatherBakeUtility.MODULE_TYPES)
             {
-                int moduleMax = _discoveredModules.ContainsKey(folder)
-                    ? Mathf.Max(0, _discoveredModules[folder].Count - 1)
+                int moduleMax = discoveredModules.ContainsKey(folder)
+                    ? Mathf.Max(0, discoveredModules[folder].Count - 1)
                     : 0;
 
                 SerializedProperty prop = GetIndexPropForFolder(folder);
@@ -464,43 +453,37 @@ namespace BlackHorizon.HorizonWeatherTime
             }
         }
 
-        private void ApplyMasterPreset(int newIndex)
+        private void ApplyMasterPreset(int newIndex, Dictionary<string, List<ScriptableObject>> discoveredModules)
         {
             _currentProfileIndexProp.intValue = newIndex;
 
-            if (_target.weatherProfilesList != null
-                && newIndex < _target.weatherProfilesList.Length)
+            if (_target.weatherProfilesList != null && newIndex < _target.weatherProfilesList.Length)
             {
                 var wp = _target.weatherProfilesList[newIndex] as WeatherProfile;
                 if (wp != null)
                 {
-                    _lightingIndexProp.intValue = FindModuleIndex("Lighting", wp.lightingProfile);
-                    _skyIndexProp.intValue = FindModuleIndex("Sky", wp.skyProfile);
-                    _cloudIndexProp.intValue = FindModuleIndex("Clouds", wp.cloudProfile);
-                    _moonIndexProp.intValue = FindModuleIndex("Moon", wp.moonProfile);
-                    _fogIndexProp.intValue = FindModuleIndex("Fog", wp.fogProfile);
-                    _effectsIndexProp.intValue = FindModuleIndex("Effects", wp.effectsProfile);
+                    _lightingIndexProp.intValue = FindModuleIndex("Lighting", wp.lightingProfile, discoveredModules);
+                    _skyIndexProp.intValue = FindModuleIndex("Sky", wp.skyProfile, discoveredModules);
+                    _cloudIndexProp.intValue = FindModuleIndex("Clouds", wp.cloudProfile, discoveredModules);
+                    _moonIndexProp.intValue = FindModuleIndex("Moon", wp.moonProfile, discoveredModules);
+                    _fogIndexProp.intValue = FindModuleIndex("Fog", wp.fogProfile, discoveredModules);
+                    _effectsIndexProp.intValue = FindModuleIndex("Effects", wp.effectsProfile, discoveredModules);
                 }
             }
-
             serializedObject.ApplyModifiedProperties();
             _target.Refresh();
-            EditorUtility.SetDirty(_target);
         }
 
         /// <summary>
         /// Finds the index of a module in the discovered list by matching asset name.
         /// </summary>
-        private int FindModuleIndex(string folder, ScriptableObject module)
+        private int FindModuleIndex(string folder, ScriptableObject module, Dictionary<string, List<ScriptableObject>> discoveredModules)
         {
-            if (module == null) return 0;
-            if (!_discoveredModules.ContainsKey(folder)) return 0;
-
-            var list = _discoveredModules[folder];
+            if (module == null || !discoveredModules.ContainsKey(folder)) return 0;
+            var list = discoveredModules[folder];
             for (int i = 0; i < list.Count; i++)
             {
-                if (list[i] != null && list[i].name == module.name)
-                    return i;
+                if (list[i] != null && list[i].name == module.name) return i;
             }
             return 0;
         }
@@ -538,23 +521,18 @@ namespace BlackHorizon.HorizonWeatherTime
         /// Draws a dropdown that lists discovered modules of a specific type.
         /// Shows module asset names, not preset names.
         /// </summary>
-        private void DrawModuleDropdown(string label, SerializedProperty indexProp, string folder)
+        private void DrawModuleDropdown(string label, SerializedProperty indexProp, string folder, Dictionary<string, List<ScriptableObject>> discoveredModules)
         {
-            string[] names = GetModuleNames(folder);
-            int maxIndex = Mathf.Max(0, names.Length - 1);
-
-            if (indexProp.intValue > maxIndex)
-                indexProp.intValue = 0;
-
-            EditorGUILayout.BeginHorizontal();
-
-            int newIndex = EditorGUILayout.Popup(label, indexProp.intValue, names);
-            if (newIndex != indexProp.intValue)
+            string[] names = new[] { "(None)" };
+            if (discoveredModules.ContainsKey(folder) && discoveredModules[folder].Count > 0)
             {
-                indexProp.intValue = newIndex;
+                names = discoveredModules[folder].Select(m => m != null ? m.name : "(None)").ToArray();
             }
 
-            EditorGUILayout.EndHorizontal();
+            int maxIndex = Mathf.Max(0, names.Length - 1);
+            if (indexProp.intValue > maxIndex) indexProp.intValue = 0;
+
+            indexProp.intValue = EditorGUILayout.Popup(label, indexProp.intValue, names);
         }
 
         private void DrawTimeDebugInfo()
@@ -589,10 +567,8 @@ namespace BlackHorizon.HorizonWeatherTime
 
         private void CheckAndConfigureDependencies()
         {
-            var defaultPresets = EnsureDefaultPresets();
+            EnsureDefaultPresets();
 
-            ScanAndSyncProfiles();
-            ScanModuleFolders();
             EnsureProceduralTextures();
             CheckAndConfigureSkyboxMaterial();
             CheckAndConfigureParticleAssets();
@@ -768,108 +744,6 @@ namespace BlackHorizon.HorizonWeatherTime
                 return templatesRoot;
             }
             return null;
-        }
-
-        /// <summary>
-        /// Scans the user's preset folder for all WeatherProfile assets
-        /// and syncs the system's profile list to match.
-        /// </summary>
-        private void ScanAndSyncProfiles()
-        {
-            if (!Directory.Exists(PRESETS_DIR)) return;
-
-            string[] guids = AssetDatabase.FindAssets("t:WeatherProfile",
-                new[] { PRESETS_DIR });
-
-            var foundProfiles = new List<UnityEngine.Object>();
-
-            foreach (string guid in guids)
-            {
-                string path = AssetDatabase.GUIDToAssetPath(guid);
-                WeatherProfile profile = AssetDatabase.LoadAssetAtPath<WeatherProfile>(path);
-                if (profile != null)
-                {
-                    foundProfiles.Add(profile);
-                }
-            }
-
-            foundProfiles.Sort((a, b) =>
-                string.Compare(a.name, b.name, System.StringComparison.OrdinalIgnoreCase));
-
-            bool changed = false;
-            if (_target.weatherProfilesList == null
-                || _target.weatherProfilesList.Length != foundProfiles.Count)
-            {
-                changed = true;
-            }
-            else
-            {
-                for (int i = 0; i < foundProfiles.Count; i++)
-                {
-                    if (_target.weatherProfilesList[i] != foundProfiles[i])
-                    {
-                        changed = true;
-                        break;
-                    }
-                }
-            }
-
-            if (changed)
-            {
-                _target.weatherProfilesList = foundProfiles.ToArray();
-                EditorUtility.SetDirty(_target);
-
-                Debug.Log($"<b><color=#33FF33>[SCAN]</color></b> <color=white>Found {foundProfiles.Count} weather profiles in {PRESETS_DIR}</color>");
-            }
-        }
-
-        /// <summary>
-        /// Scans each module subfolder for available profiles.
-        /// Adding a new module type requires only a new entry in MODULE_TYPES.
-        /// </summary>
-        private void ScanModuleFolders()
-        {
-            _discoveredModules.Clear();
-
-            foreach (var (folder, type) in MODULE_TYPES)
-            {
-                string dir = $"{MODULES_DIR}/{folder}";
-                var results = new List<ScriptableObject>();
-
-                if (Directory.Exists(dir))
-                {
-                    string[] guids = AssetDatabase.FindAssets(
-                        $"t:{type.Name}", new[] { dir });
-
-                    foreach (string guid in guids)
-                    {
-                        string path = AssetDatabase.GUIDToAssetPath(guid);
-                        var module = AssetDatabase.LoadAssetAtPath(path, type)
-                            as ScriptableObject;
-                        if (module != null) results.Add(module);
-                    }
-
-                    results.Sort((a, b) =>
-                        string.Compare(a.name, b.name,
-                            StringComparison.OrdinalIgnoreCase));
-                }
-
-                _discoveredModules[folder] = results;
-            }
-        }
-
-        /// <summary>
-        /// Gets display names for a module type's dropdown.
-        /// </summary>
-        private string[] GetModuleNames(string folder)
-        {
-            if (!_discoveredModules.ContainsKey(folder)
-                || _discoveredModules[folder].Count == 0)
-                return new[] { "(None)" };
-
-            return _discoveredModules[folder]
-                .Select(m => m != null ? m.name : "(None)")
-                .ToArray();
         }
 
         private void CheckAndConfigureSkyboxMaterial()

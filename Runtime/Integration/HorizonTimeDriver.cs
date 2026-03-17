@@ -17,7 +17,12 @@ namespace BlackHorizon.HorizonWeatherTime
         public WeatherTimeSystem targetSystem;
 
         [Header("Sync Settings")]
-        [UdonSynced(UdonSyncMode.None)] private int _syncedProfileIndex;
+        [UdonSynced(UdonSyncMode.None)] private int _syncLighting;
+        [UdonSynced(UdonSyncMode.None)] private int _syncSky;
+        [UdonSynced(UdonSyncMode.None)] private int _syncCloud;
+        [UdonSynced(UdonSyncMode.None)] private int _syncMoon;
+        [UdonSynced(UdonSyncMode.None)] private int _syncFog;
+        [UdonSynced(UdonSyncMode.None)] private int _syncEffects;
 
         private bool _isLocalOverride = false;
         private VRCPlayerApi _localPlayer;
@@ -29,13 +34,24 @@ namespace BlackHorizon.HorizonWeatherTime
 
             if (targetSystem != null)
             {
-                ApplyWeather(_syncedProfileIndex);
+                if (Networking.IsOwner(gameObject))
+                {
+                    _syncLighting = targetSystem.LightingIndex;
+                    _syncSky = targetSystem.SkyIndex;
+                    _syncCloud = targetSystem.CloudIndex;
+                    _syncMoon = targetSystem.MoonIndex;
+                    _syncFog = targetSystem.FogIndex;
+                    _syncEffects = targetSystem.EffectsIndex;
+                    RequestSerialization();
+                    
+                    ApplyWeather(_syncLighting, _syncSky, _syncCloud, _syncMoon, _syncFog, _syncEffects);
+                }
             }
         }
 
         public override void OnDeserialization()
         {
-            if (!_isLocalOverride) ApplyWeather(_syncedProfileIndex);
+            if (!_isLocalOverride) ApplyWeather(_syncLighting, _syncSky, _syncCloud, _syncMoon, _syncFog, _syncEffects);
         }
 
         public override void OnPlayerJoined(VRCPlayerApi player)
@@ -43,31 +59,37 @@ namespace BlackHorizon.HorizonWeatherTime
             if (Networking.IsOwner(gameObject)) RequestSerialization();
         }
 
-        public void SetGlobalWeather(int profileIndex)
+        public void SetGlobalWeather(int lighting, int sky, int cloud, int moon, int fog, int effects)
         {
             if (!Networking.IsOwner(gameObject)) Networking.SetOwner(Networking.LocalPlayer, gameObject);
-            _syncedProfileIndex = profileIndex;
+            
+            _syncLighting = lighting;
+            _syncSky = sky;
+            _syncCloud = cloud;
+            _syncMoon = moon;
+            _syncFog = fog;
+            _syncEffects = effects;
             RequestSerialization();
 
             _isLocalOverride = false; 
-            ApplyWeather(profileIndex);
+            ApplyWeather(lighting, sky, cloud, moon, fog, effects);
         }
 
-        public void SetLocalWeather(int profileIndex)
+        public void SetLocalWeather(int lighting, int sky, int cloud, int moon, int fog, int effects)
         {
             _isLocalOverride = true;
-            ApplyWeather(profileIndex);
+            ApplyWeather(lighting, sky, cloud, moon, fog, effects);
         }
 
         public void RevertToGlobalSync()
         {
             _isLocalOverride = false;
-            ApplyWeather(_syncedProfileIndex);
+            ApplyWeather(_syncLighting, _syncSky, _syncCloud, _syncMoon, _syncFog, _syncEffects);
         }
 
-        private void ApplyWeather(int index)
+        private void ApplyWeather(int l, int s, int c, int m, int f, int e)
         {
-            if (targetSystem != null) targetSystem.SetWeatherProfile(index);
+            if (targetSystem != null) targetSystem.SetModuleStates(l, s, c, m, f, e);
         }
     }
 }

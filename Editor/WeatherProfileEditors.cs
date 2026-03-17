@@ -15,7 +15,12 @@ namespace BlackHorizon.HorizonWeatherTime
             var sys = Object.FindAnyObjectByType<WeatherTimeSystem>();
             if (sys != null)
             {
-                sys.Editor_HotReloadProfile(null);
+                var discovered = WeatherBakeUtility.ScanModuleFolders();
+                WeatherBakeUtility.BakeModules(sys, discovered);
+
+                sys.ForceVisualUpdate();
+
+                SceneView.RepaintAll();
             }
         }
     }

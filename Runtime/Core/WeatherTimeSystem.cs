@@ -68,8 +68,6 @@ namespace BlackHorizon.HorizonWeatherTime
         [Tooltip("List of Weather Profiles. Stored as generic Objects for Udon compatibility.")]
         public UnityEngine.Object[] weatherProfilesList;
 
-        [SerializeField, HideInInspector] private int _bakedProfileCount = 0;
-
         [Tooltip("The index of the currently active profile.")]
         [SerializeField] private int _currentProfileIndex = 0;
 
@@ -99,16 +97,20 @@ namespace BlackHorizon.HorizonWeatherTime
         // BAKED DATA
         // =========================================================
 
-        [Header("Baked Runtime Data (Auto-generated)")]
-        [Tooltip("Do not edit manually. Populated by the baking system.")]
-        public BakedProfileData[] bakedProfiles;
-
         [HideInInspector] public BakedProfileData[] bakedLightingModules;
         [HideInInspector] public BakedProfileData[] bakedSkyModules;
         [HideInInspector] public BakedProfileData[] bakedCloudModules;
         [HideInInspector] public BakedProfileData[] bakedMoonModules;
         [HideInInspector] public BakedProfileData[] bakedFogModules;
         [HideInInspector] public BakedProfileData[] bakedEffectsModules;
+
+        [Header("Preset Mappings (Auto-generated)")]
+        [HideInInspector] public int[] presetToLighting;
+        [HideInInspector] public int[] presetToSky;
+        [HideInInspector] public int[] presetToCloud; 
+        [HideInInspector] public int[] presetToMoon;
+        [HideInInspector] public int[] presetToFog;
+        [HideInInspector] public int[] presetToEffects;
 
         // =========================================================
 
@@ -121,6 +123,13 @@ namespace BlackHorizon.HorizonWeatherTime
         private const float SECONDS_IN_DAY = 86400f;
 
         public float TimeOfDay => _sunTimeOfDay;
+
+        public int LightingIndex => _lightingIndex;
+        public int SkyIndex => _skyIndex;
+        public int CloudIndex => _cloudIndex;
+        public int MoonIndex => _moonIndex;
+        public int FogIndex => _fogIndex;
+        public int EffectsIndex => _effectsIndex;
 
         private Camera _mainCameraCache;
 
@@ -151,35 +160,23 @@ namespace BlackHorizon.HorizonWeatherTime
         }
 
 #if !COMPILER_UDONSHARP && UNITY_EDITOR
-private void OnValidate()
-{
-    daysInYear = Mathf.Max(1f, daysInYear);
-    dayOfYear = Mathf.Clamp(dayOfYear, 1f, daysInYear);
-
-    if (!Application.isPlaying)
-    {
-        UnityEditor.EditorApplication.delayCall += () =>
+        private void OnValidate()
         {
-            if (this == null) return;
-            if (UnityEditor.EditorApplication.isPlayingOrWillChangePlaymode
-                && !Application.isPlaying) return;
+            daysInYear = Mathf.Max(1f, daysInYear);
+            dayOfYear = Mathf.Clamp(dayOfYear, 1f, daysInYear);
 
-            if (WeatherBakeUtility.NeedsRebake(this))
+            if (!Application.isPlaying)
             {
-                WeatherBakeUtility.BakeAllProfiles(this);
-            }
-            else if (bakedProfiles != null)
-            {
-                for (int i = 0; i < bakedProfiles.Length; i++)
+                UnityEditor.EditorApplication.delayCall += () =>
                 {
-                    WeatherBakeUtility.RebakeSingleProfile(this, i);
-                }
+                    if (this == null) return;
+                    
+                    UpdateSystem();
+                    
+                    UnityEditor.SceneView.RepaintAll();
+                };
             }
-
-            UpdateSystem();
-        };
-    }
-}
+        }
 #endif
 
 #endif
@@ -200,28 +197,7 @@ private void OnValidate()
         public void Editor_HotReloadProfile(WeatherProfile changedProfile)
         {
             if (this == null) return;
-
-            if (changedProfile != null && weatherProfilesList != null)
-            {
-                for (int i = 0; i < weatherProfilesList.Length; i++)
-                {
-                    if (weatherProfilesList[i] == changedProfile)
-                    {
-                        WeatherBakeUtility.RebakeSingleProfile(this, i);
-                    }
-                }
-            }
-            else
-            {
-                if (bakedProfiles != null)
-                {
-                    for (int i = 0; i < bakedProfiles.Length; i++)
-                    {
-                        WeatherBakeUtility.RebakeSingleProfile(this, i);
-                    }
-                }
-            }
-
+            
             UpdateSystem();
 
             if (!Application.isPlaying)
@@ -235,7 +211,6 @@ private void OnValidate()
         {
 #if !COMPILER_UDONSHARP && UNITY_EDITOR
             WarnAboutExternalLights();
-            WeatherBakeUtility.BakeAllProfiles(this);
 #endif
             Refresh();
         }
@@ -431,76 +406,62 @@ private void OnValidate()
         // PUBLIC API
         // =========================================================
 
-        public void SetExternalTime(float sunTime01)
+        /// <summary>
+        /// API/GUI Compatibility: Maps a master preset index to the corresponding 
+        /// module indices and applies them simultaneously without overhead.
+        /// </summary>
+        public void SetWeatherProfile(int index)
         {
-            _isExternallyControlled = true;
-            _sunTimeOfDay = sunTime01;
+            if (presetToLighting == null || presetToSky == null || presetToCloud == null ||
+                presetToMoon == null || presetToFog == null || presetToEffects == null) return;
+
+            if (index < 0 || index >= presetToLighting.Length) return;
+
+            SetModuleStates(
+                presetToLighting[index],
+                presetToSky[index],
+                presetToCloud[index],
+                presetToMoon[index],
+                presetToFog[index],
+                presetToEffects[index]
+            );
+        }
+
+        /// <summary>
+        /// Sets all module layers simultaneously. Used by network sync and master presets.
+        /// </summary>
+        public void SetModuleStates(int lighting, int sky, int cloud, int moon, int fog, int effects)
+        {
+            _lightingIndex = lighting;
+            _skyIndex = sky;
+            _cloudIndex = cloud;
+            _moonIndex = moon;
+            _fogIndex = fog;
+            _effectsIndex = effects;
             UpdateSystem();
         }
 
-        public void ReleaseExternalControl()
-        {
-            _isExternallyControlled = false;
-        }
-
-        /// <summary>
-        /// Sets the global weather preset. This overrides all individual module states 
-        /// (clouds, fog, lighting, etc.) to match the selected base preset.
-        /// </summary>
-        /// <param name="index">The index of the WeatherProfile in the weatherProfilesList.</param>
-        public void SetWeatherProfile(int index)
-        {
-            if (bakedProfiles == null) return;
-            if (index >= 0 && index < bakedProfiles.Length)
-            {
-                _currentProfileIndex = index;
-                _lightingIndex = index;
-                _skyIndex = index;
-                _cloudIndex = index;
-                _moonIndex = index;
-                _fogIndex = index;
-                _effectsIndex = index;
-                UpdateSystem();
-            }
-        }
-
-        /// <summary>
-        /// Independently overrides the active cloud layer state without affecting the rest of the weather.
-        /// Useful for dynamically rolling in storm clouds while keeping ambient lighting intact.
-        /// </summary>
-        /// <param name="cloudPresetIndex">The index of the baked profile from which to read cloud data.</param>
         public void SetCloudState(int cloudPresetIndex)
         {
-            if (bakedProfiles != null && cloudPresetIndex >= 0
-                && cloudPresetIndex < bakedProfiles.Length)
+            if (bakedCloudModules != null && cloudPresetIndex >= 0 && cloudPresetIndex < bakedCloudModules.Length)
             {
                 _cloudIndex = cloudPresetIndex;
                 UpdateSystem();
             }
         }
 
-        /// <summary>
-        /// Independently overrides the active fog layer state.
-        /// Ideal for creating morning mist or localized thick fog scenarios.
-        /// </summary>
-        /// <param name="fogPresetIndex">The index of the baked profile from which to read fog data.</param>
         public void SetFogState(int fogPresetIndex)
         {
-            if (bakedProfiles != null && fogPresetIndex >= 0
-                && fogPresetIndex < bakedProfiles.Length)
+            if (bakedFogModules != null && fogPresetIndex >= 0 && fogPresetIndex < bakedFogModules.Length)
             {
                 _fogIndex = fogPresetIndex;
                 UpdateSystem();
             }
         }
 
-        /// <summary>
-        /// Independently sets the weather effects (particles like rain/snow).
-        /// </summary>
         public void SetEffectsState(int effectsPresetIndex)
         {
-            if (bakedProfiles != null && effectsPresetIndex >= 0
-                && effectsPresetIndex < bakedProfiles.Length)
+            if (bakedEffectsModules != null && effectsPresetIndex >= 0 && effectsPresetIndex < bakedEffectsModules.Length)
             {
                 _effectsIndex = effectsPresetIndex;
                 UpdateSystem();
@@ -515,33 +476,45 @@ private void OnValidate()
             }
         }
 
+        public void SetExternalTime(float sunTime01)
+        {
+            _isExternallyControlled = true;
+            _sunTimeOfDay = Mathf.Clamp01(sunTime01);
+            UpdateSystem();
+        }
+
+        public void ReleaseExternalControl()
+        {
+            _isExternallyControlled = false;
+        }
+
         // =========================================================
         // INTERNAL LOGIC
         // =========================================================
 
         /// <summary>
         /// Main update loop. Computes sun/moon positions from astronomical parameters
-        /// (season, time, latitude) and dispatches to all subsystems.
+        /// (season, time, latitude) and dispatches the data to all subsystems using 
+        /// the currently active per-module baked data (Lighting, Sky, Clouds, etc.).
         /// </summary>
         private void UpdateSystem()
         {
-            if (bakedProfiles == null || bakedProfiles.Length == 0) return;
+            if (bakedLightingModules == null || bakedLightingModules.Length == 0) return;
             if (_lightingManager == null) return;
 
-            int profileCount = bakedProfiles.Length;
-            if (_lightingIndex >= profileCount) _lightingIndex = 0;
-            if (_skyIndex >= profileCount) _skyIndex = 0;
-            if (_cloudIndex >= profileCount) _cloudIndex = 0;
-            if (_moonIndex >= profileCount) _moonIndex = 0;
-            if (_fogIndex >= profileCount) _fogIndex = 0;
-            if (_effectsIndex >= profileCount) _effectsIndex = 0;
+            if (bakedLightingModules != null && _lightingIndex >= bakedLightingModules.Length) _lightingIndex = 0;
+            if (bakedSkyModules != null && _skyIndex >= bakedSkyModules.Length) _skyIndex = 0;
+            if (bakedCloudModules != null && _cloudIndex >= bakedCloudModules.Length) _cloudIndex = 0;
+            if (bakedMoonModules != null && _moonIndex >= bakedMoonModules.Length) _moonIndex = 0;
+            if (bakedFogModules != null && _fogIndex >= bakedFogModules.Length) _fogIndex = 0;
+            if (bakedEffectsModules != null && _effectsIndex >= bakedEffectsModules.Length) _effectsIndex = 0;
 
-            BakedProfileData lp = bakedProfiles[_lightingIndex];  // Lighting
-            BakedProfileData sp = bakedProfiles[_skyIndex];       // Sky
-            BakedProfileData cp = bakedProfiles[_cloudIndex];     // Clouds
-            BakedProfileData mp = bakedProfiles[_moonIndex];      // Moon
-            BakedProfileData fp = bakedProfiles[_fogIndex];       // Fog
-            BakedProfileData ep = bakedProfiles[_effectsIndex];   // Effects
+            BakedProfileData lp = bakedLightingModules != null && bakedLightingModules.Length > 0 ? bakedLightingModules[_lightingIndex] : null;
+            BakedProfileData sp = bakedSkyModules != null && bakedSkyModules.Length > 0 ? bakedSkyModules[_skyIndex] : null;
+            BakedProfileData cp = bakedCloudModules != null && bakedCloudModules.Length > 0 ? bakedCloudModules[_cloudIndex] : null;
+            BakedProfileData mp = bakedMoonModules != null && bakedMoonModules.Length > 0 ? bakedMoonModules[_moonIndex] : null;
+            BakedProfileData fp = bakedFogModules != null && bakedFogModules.Length > 0 ? bakedFogModules[_fogIndex] : null;
+            BakedProfileData ep = bakedEffectsModules != null && bakedEffectsModules.Length > 0 ? bakedEffectsModules[_effectsIndex] : null;
 
             if (lp == null) return;
 

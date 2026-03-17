@@ -10,66 +10,42 @@ namespace BlackHorizon.HorizonWeatherTime
         private const string CONTAINER_NAME = "_BakedWeatherData";
         private static bool _isBaking = false;
 
-        public static void BakeAllProfiles(WeatherTimeSystem system)
+        private const string PROFILES_ROOT = "Assets/Horizon Weather & Time/Weather Profiles";
+        private const string MODULES_DIR = PROFILES_ROOT + "/Modules";
+
+        public static readonly (string folder, System.Type type)[] MODULE_TYPES =
         {
-            if (system == null || _isBaking) return;
-            if (system.weatherProfilesList == null || system.weatherProfilesList.Length == 0)
+            ("Lighting", typeof(LightingProfile)),
+            ("Sky",      typeof(SkyProfile)),
+            ("Clouds",   typeof(CloudProfile)),
+            ("Moon",     typeof(MoonProfile)),
+            ("Fog",      typeof(FogProfile)),
+            ("Effects",  typeof(EffectsProfile)),
+        };
+
+        public static Dictionary<string, List<ScriptableObject>> ScanModuleFolders()
+        {
+            var discoveredModules = new Dictionary<string, List<ScriptableObject>>();
+
+            foreach (var (folder, type) in MODULE_TYPES)
             {
-                ClearContainer(system);
-                return;
-            }
+                string dir = $"{MODULES_DIR}/{folder}";
+                var results = new List<ScriptableObject>();
 
-            _isBaking = true;
-
-            try
-            {
-                int count = system.weatherProfilesList.Length;
-
-                Transform container = system.transform.Find(CONTAINER_NAME);
-                if (container == null)
+                if (System.IO.Directory.Exists(dir))
                 {
-                    var go = new GameObject(CONTAINER_NAME);
-                    go.transform.SetParent(system.transform);
-                    go.transform.localPosition = Vector3.zero;
-                    container = go.transform;
-                }
-                container.gameObject.hideFlags = HideFlags.HideInHierarchy;
-
-                for (int i = container.childCount - 1; i >= 0; i--)
-                {
-                    Object.DestroyImmediate(container.GetChild(i).gameObject);
-                }
-
-                var bakedArray = new BakedProfileData[count];
-
-                for (int i = 0; i < count; i++)
-                {
-                    var wp = system.weatherProfilesList[i] as WeatherProfile;
-
-                    var child = new GameObject($"_{i}");
-                    child.transform.SetParent(container);
-                    child.transform.localPosition = Vector3.zero;
-                    child.hideFlags = HideFlags.HideInHierarchy;
-
-                    var baked = child.AddComponent<BakedProfileData>();
-
-                    if (wp != null)
+                    string[] guids = AssetDatabase.FindAssets($"t:{type.Name}", new[] { dir });
+                    foreach (string guid in guids)
                     {
-                        baked.CopyFromProfile(wp);
+                        string path = AssetDatabase.GUIDToAssetPath(guid);
+                        var module = AssetDatabase.LoadAssetAtPath(path, type) as ScriptableObject;
+                        if (module != null) results.Add(module);
                     }
-
-                    bakedArray[i] = baked;
+                    results.Sort((a, b) => string.Compare(a.name, b.name, System.StringComparison.OrdinalIgnoreCase));
                 }
-
-                system.bakedProfiles = bakedArray;
-                EditorUtility.SetDirty(system);
-
-                Debug.Log($"<b><color=#33FF33>[BAKE]</color></b> <color=white>Baked {count} profiles.</color>", system);
+                discoveredModules[folder] = results;
             }
-            finally
-            {
-                _isBaking = false;
-            }
+            return discoveredModules;
         }
 
         private const string MODULE_CONTAINER_NAME = "_BakedModules";
@@ -88,6 +64,9 @@ namespace BlackHorizon.HorizonWeatherTime
 
             try
             {
+                Transform legacyContainer = system.transform.Find("_BakedWeatherData");
+                if (legacyContainer != null) Object.DestroyImmediate(legacyContainer.gameObject);
+
                 Transform container = system.transform.Find(MODULE_CONTAINER_NAME);
                 if (container == null)
                 {
@@ -109,6 +88,8 @@ namespace BlackHorizon.HorizonWeatherTime
                     AssignModuleArray(system, kvp.Key, array);
                     total += kvp.Value.Count;
                 }
+
+                UpdatePresetMappings(system, discoveredModules);
 
                 EditorUtility.SetDirty(system);
 
@@ -171,55 +152,88 @@ namespace BlackHorizon.HorizonWeatherTime
             }
         }
 
-        public static void RebakeSingleProfile(WeatherTimeSystem system, int index)
-        {
-            if (system == null || _isBaking) return;
-            if (system.bakedProfiles == null) return;
-            if (index < 0 || index >= system.bakedProfiles.Length) return;
-
-            var baked = system.bakedProfiles[index];
-            if (baked == null) return;
-
-            if (system.weatherProfilesList == null || index >= system.weatherProfilesList.Length) return;
-
-            var wp = system.weatherProfilesList[index] as WeatherProfile;
-            if (wp != null)
-            {
-                baked.CopyFromProfile(wp);
-                EditorUtility.SetDirty(baked);
-            }
-        }
-
-        private static void ClearContainer(WeatherTimeSystem system)
-        {
-            Transform container = system.transform.Find(CONTAINER_NAME);
-            if (container != null)
-            {
-                Object.DestroyImmediate(container.gameObject);
-            }
-            system.bakedProfiles = null;
-            EditorUtility.SetDirty(system);
-        }
-
         /// <summary>
-        /// Checks if a rebake is actually needed (count mismatch or missing data).
+        /// Checks if a rebake is needed for the new modular system.
         /// </summary>
-        public static bool NeedsRebake(WeatherTimeSystem system)
+        public static bool NeedsRebakeModules(WeatherTimeSystem system, Dictionary<string, List<ScriptableObject>> discoveredModules)
         {
-            if (system == null) return false;
+            if (system == null || discoveredModules == null) return false;
 
-            if (system.weatherProfilesList == null) 
-                return system.bakedProfiles != null && system.bakedProfiles.Length > 0;
+            if (!CompareCategoryCount(discoveredModules, "Lighting", system.bakedLightingModules)) return true;
+            if (!CompareCategoryCount(discoveredModules, "Sky", system.bakedSkyModules)) return true;
+            if (!CompareCategoryCount(discoveredModules, "Clouds", system.bakedCloudModules)) return true;
+            if (!CompareCategoryCount(discoveredModules, "Moon", system.bakedMoonModules)) return true;
+            if (!CompareCategoryCount(discoveredModules, "Fog", system.bakedFogModules)) return true;
+            if (!CompareCategoryCount(discoveredModules, "Effects", system.bakedEffectsModules)) return true;
 
-            if (system.bakedProfiles == null) return true;
-            if (system.bakedProfiles.Length != system.weatherProfilesList.Length) return true;
-
-            for (int i = 0; i < system.bakedProfiles.Length; i++)
-            {
-                if (system.bakedProfiles[i] == null) return true;
-            }
+            if (system.presetToLighting == null || 
+                (system.weatherProfilesList != null && system.presetToLighting.Length != system.weatherProfilesList.Length)) 
+                return true;
 
             return false;
+        }
+
+        private static bool CompareCategoryCount(Dictionary<string, List<ScriptableObject>> discovered, string key, BakedProfileData[] baked)
+        {
+            int discoveredCount = discovered.TryGetValue(key, out var list) ? list.Count : 0;
+            int bakedCount = baked != null ? baked.Length : 0;
+            return discoveredCount == bakedCount;
+        }
+
+        private static void UpdatePresetMappings(WeatherTimeSystem system, Dictionary<string, List<ScriptableObject>> discoveredModules)
+        {
+            int count = system.weatherProfilesList != null ? system.weatherProfilesList.Length : 0;
+            
+            system.presetToLighting = new int[count];
+            system.presetToSky = new int[count];
+            system.presetToCloud = new int[count];
+            system.presetToMoon = new int[count];
+            system.presetToFog = new int[count];
+            system.presetToEffects = new int[count];
+
+            for (int i = 0; i < count; i++)
+            {
+                var wp = system.weatherProfilesList[i] as WeatherProfile;
+                if (wp != null)
+                {
+                    system.presetToLighting[i] = FindValidIndex("Lighting", wp.lightingProfile, discoveredModules);
+                    system.presetToSky[i] = FindValidIndex("Sky", wp.skyProfile, discoveredModules);
+                    system.presetToCloud[i] = FindValidIndex("Clouds", wp.cloudProfile, discoveredModules);
+                    system.presetToMoon[i] = FindValidIndex("Moon", wp.moonProfile, discoveredModules);
+                    system.presetToFog[i] = FindValidIndex("Fog", wp.fogProfile, discoveredModules);
+                    system.presetToEffects[i] = FindValidIndex("Effects", wp.effectsProfile, discoveredModules);
+                }
+                else if (system.weatherProfilesList[i] != null)
+                {
+                    Debug.LogWarning($"<b><color=#FF9900>[WeatherBake]</color></b> weatherProfilesList[{i}] is not a WeatherProfile!");
+                }
+            }
+        }
+
+        private static int FindValidIndex(string folder, ScriptableObject module, Dictionary<string, List<ScriptableObject>> discoveredModules)
+        {
+            if (module == null) return 0; 
+            if (!discoveredModules.TryGetValue(folder, out var list)) return 0;
+
+            for (int i = 0; i < list.Count; i++)
+            {
+                if (ReferenceEquals(list[i], module)) return i;
+            }
+
+            Debug.LogWarning($"<b><color=#FF3333>[BAKE ERROR]</color></b> Module '{module.name}' not found in {folder} folder! " +
+                             "Ensure it is placed in the correct subfolder under Weather Profiles/Modules.");
+            return 0;
+        }
+
+        private static int FindModuleIndex(string folder, ScriptableObject module, Dictionary<string, List<ScriptableObject>> discoveredModules)
+        {
+            if (module == null || !discoveredModules.ContainsKey(folder)) return 0;
+            var list = discoveredModules[folder];
+            for (int i = 0; i < list.Count; i++)
+            {
+                if (list[i] != null && list[i].name == module.name) return i;
+            }
+            return 0;
         }
     }
 }
