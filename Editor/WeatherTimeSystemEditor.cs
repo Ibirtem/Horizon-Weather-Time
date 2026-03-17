@@ -605,9 +605,10 @@ namespace BlackHorizon.HorizonWeatherTime
         private void CheckAndConfigureDependencies()
         {
             ScanAndSyncProfiles();
-            EnsureDefaultPresets();
 
             EnsureProceduralTextures();
+            EnsureDefaultPresets();
+
             CheckAndConfigureSkyboxMaterial();
             CheckAndConfigureParticleAssets();
             CheckAndConfigureOcclusionCamera();
@@ -702,22 +703,101 @@ namespace BlackHorizon.HorizonWeatherTime
             string assetName = source.name;
             if (string.IsNullOrEmpty(assetName))
             {
-                string sourcePath = UnityEditor.AssetDatabase.GetAssetPath(source);
+                string sourcePath = AssetDatabase.GetAssetPath(source);
                 assetName = Path.GetFileNameWithoutExtension(sourcePath);
             }
-            if (string.IsNullOrEmpty(assetName))
-            {
-                assetName = $"{folder}_Unknown";
-            }
+            if (string.IsNullOrEmpty(assetName)) assetName = $"{folder}_Unknown";
+
             string outputPath = $"{dir}/{assetName}.asset";
             T existing = AssetDatabase.LoadAssetAtPath<T>(outputPath);
-            if (existing != null) return existing;
+
+            if (existing != null)
+            {
+                FillGeneratedTextures(existing);
+                return existing;
+            }
 
             T copy = ScriptableObject.CreateInstance<T>();
             EditorUtility.CopySerialized(source, copy);
             AssetDatabase.CreateAsset(copy, outputPath);
 
+            FillGeneratedTextures(copy);
+
             return copy;
+        }
+
+        /// <summary>
+        /// Fills null texture fields in user module copies with generated Assets/ textures.
+        /// Package textures (moon, stars) come from templates via CopySerialized.
+        /// This handles ONLY textures that are generated into Assets/ and thus
+        /// cannot be referenced by package templates.
+        /// </summary>
+        private void FillGeneratedTextures(ScriptableObject module)
+        {
+            if (module == null) return;
+
+            if (module is CloudProfile cp)
+            {
+                bool dirty = false;
+
+                if (cp.cloudNoiseTexture == null)
+                {
+                    var tex = AssetDatabase.LoadAssetAtPath<Texture3D>(
+                        WeatherOptimizationGen.DEFAULT_CLOUD_NOISE_3D_PATH);
+                    if (tex != null) { cp.cloudNoiseTexture = tex; dirty = true; }
+                }
+                if (cp.weatherMapTexture == null)
+                {
+                    var tex = AssetDatabase.LoadAssetAtPath<Texture2D>(
+                        WeatherOptimizationGen.DEFAULT_WEATHER_MAP_PATH);
+                    if (tex != null) { cp.weatherMapTexture = tex; dirty = true; }
+                }
+                if (cp.blueNoiseTexture == null)
+                {
+                    var tex = AssetDatabase.LoadAssetAtPath<Texture2D>(
+                        WeatherOptimizationGen.DEFAULT_BLUE_NOISE_PATH);
+                    if (tex != null) { cp.blueNoiseTexture = tex; dirty = true; }
+                }
+                if (cp.cirrusNoiseTexture == null)
+                {
+                    var tex = AssetDatabase.LoadAssetAtPath<Texture2D>(
+                        WeatherOptimizationGen.DEFAULT_CIRRUS_NOISE_PATH);
+                    if (tex != null) { cp.cirrusNoiseTexture = tex; dirty = true; }
+                }
+                if (cp.curlNoiseTexture == null)
+                {
+                    var tex = AssetDatabase.LoadAssetAtPath<Texture2D>(
+                        WeatherOptimizationGen.DEFAULT_CURL_NOISE_PATH);
+                    if (tex != null) { cp.curlNoiseTexture = tex; dirty = true; }
+                }
+
+                if (dirty) EditorUtility.SetDirty(cp);
+                return;
+            }
+
+            if (module is EffectsProfile ep)
+            {
+                if (ep.weatherEffectPrefab == null)
+                {
+                    string nameLower = ep.name.ToLowerInvariant();
+                    string prefabName = null;
+
+                    if (nameLower.Contains("rain")) prefabName = "RainEffect";
+                    else if (nameLower.Contains("snow")) prefabName = "SnowEffect";
+
+                    if (prefabName != null)
+                    {
+                        string path = $"Assets/Horizon Weather & Time/Resources/Prefabs/{prefabName}.prefab";
+                        var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(path);
+                        if (prefab != null)
+                        {
+                            ep.weatherEffectPrefab = prefab;
+                            EditorUtility.SetDirty(ep);
+                        }
+                    }
+                }
+                return;
+            }
         }
 
         // --- ASSET HELPERS ---

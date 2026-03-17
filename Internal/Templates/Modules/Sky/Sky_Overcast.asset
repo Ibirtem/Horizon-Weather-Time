@@ -17,8 +17,8 @@ MonoBehaviour:
   mieCoefficient: 0.005
   mieDirectionalG: 0.8
   exposure: 7.5
-  starsCubemap: {fileID: 0}
-  milkyWayCubemap: {fileID: 0}
+  starsCubemap: {fileID: 8900000, guid: c7e5b02621f00f04ab28cf3c7d74f800, type: 3}
+  milkyWayCubemap: {fileID: 8900000, guid: 0f7f95754dae3334fa8aa8a43c6259f4, type: 3}
   starfieldAlignment: {x: 0, y: 0, z: 0}
   starsRotationSpeed: 0.5
   starsIntensity: 0.04

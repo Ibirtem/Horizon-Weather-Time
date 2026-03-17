@@ -164,18 +164,42 @@ namespace BlackHorizon.HorizonWeatherTime
         {
             if (system == null || discoveredModules == null) return false;
 
-            if (!CompareCategoryCount(discoveredModules, "Lighting", system.bakedLightingModules)) return true;
-            if (!CompareCategoryCount(discoveredModules, "Sky", system.bakedSkyModules)) return true;
-            if (!CompareCategoryCount(discoveredModules, "Clouds", system.bakedCloudModules)) return true;
-            if (!CompareCategoryCount(discoveredModules, "Moon", system.bakedMoonModules)) return true;
-            if (!CompareCategoryCount(discoveredModules, "Fog", system.bakedFogModules)) return true;
-            if (!CompareCategoryCount(discoveredModules, "Effects", system.bakedEffectsModules)) return true;
+            Transform container = system.transform.Find(MODULE_CONTAINER_NAME);
+            if (container == null) return true;
+
+            if (!IsValidBakedArray(discoveredModules, "Lighting", system.bakedLightingModules)) return true;
+            if (!IsValidBakedArray(discoveredModules, "Sky",      system.bakedSkyModules)) return true;
+            if (!IsValidBakedArray(discoveredModules, "Clouds",   system.bakedCloudModules)) return true;
+            if (!IsValidBakedArray(discoveredModules, "Moon",     system.bakedMoonModules)) return true;
+            if (!IsValidBakedArray(discoveredModules, "Fog",      system.bakedFogModules)) return true;
+            if (!IsValidBakedArray(discoveredModules, "Effects",  system.bakedEffectsModules)) return true;
 
             if (system.presetToLighting == null || 
                 (system.weatherProfilesList != null && system.presetToLighting.Length != system.weatherProfilesList.Length)) 
                 return true;
 
             return false;
+        }
+
+        /// <summary>
+        /// Validates that baked array matches discovered count AND all entries are alive.
+        /// </summary>
+        private static bool IsValidBakedArray(Dictionary<string, List<ScriptableObject>> discovered, string key, BakedProfileData[] baked)
+        {
+            int discoveredCount = discovered.TryGetValue(key, out var list) ? list.Count : 0;
+            
+            if (baked == null || baked.Length == 0)
+                return discoveredCount == 0;
+
+            if (baked.Length != discoveredCount)
+                return false;
+
+            for (int i = 0; i < baked.Length; i++)
+            {
+                if (baked[i] == null) return false;
+            }
+
+            return true;
         }
 
         private static bool CompareCategoryCount(Dictionary<string, List<ScriptableObject>> discovered, string key, BakedProfileData[] baked)

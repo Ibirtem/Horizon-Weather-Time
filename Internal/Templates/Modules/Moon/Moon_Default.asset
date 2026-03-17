@@ -12,6 +12,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 7ee2d3b4d65337a478d9884812216b75, type: 3}
   m_Name: Moon_Default
   m_EditorClassIdentifier: 
-  moonTexture: {fileID: 0}
+  moonTexture: {fileID: 2800000, guid: 623a1c4b27570744990755e373da1f53, type: 3}
   moonSize: 0.012
   moonColor: {r: 0.85, g: 0.85, b: 0.8, a: 1}
