@@ -437,7 +437,7 @@ Shader "Horizon/Procedural Skybox"
                     }
 
                     // Multiple scattering approximation (vanishes at night)
-                    float msStrength = saturate(sunDir.y * 5.0 + 0.1);
+                    float msStrength = saturate(sunDir.y * 2.5 + 0.45);
                     msStrength *= msStrength;
                     if (msStrength > 0.001)
                     {
@@ -454,8 +454,8 @@ Shader "Horizon/Procedural Skybox"
                 float3 skyColor = totalInscatter;
 
                 // Night floor: suppress residual atmospheric glow
-                float nightDarkening = saturate(sunDir.y * 4.0 + 0.6);
-                skyColor *= max(nightDarkening * nightDarkening, 0.001);
+                float nightDarkening = saturate(sunDir.y * 3.0 + 0.95);
+                skyColor *= max(nightDarkening * nightDarkening, 0.0005);
 
                 if (hitsGround)
                 {
@@ -720,7 +720,7 @@ Shader "Horizon/Procedural Skybox"
                     float agDenom = 1.0 - agShellRatio * agShellRatio * agSinZSq;
                     float agVanRhijnRaw = 1.0 / sqrt(max(agDenom, 0.01));
 
-                    float agVanRhijn = 1.0 + saturate(agVanRhijnRaw - 1.0) * 0.25;
+                    float agVanRhijn = 1.0 + saturate(agVanRhijnRaw - 1.0) * 0.5;
 
                     // --- Atmospheric extinction below the emission layer ---
                     float agS2 = agCosZ * agCosZ;

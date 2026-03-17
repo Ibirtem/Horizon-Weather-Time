@@ -15,7 +15,7 @@ MonoBehaviour:
   enabled: 1
   fogMode: 1
   dayColor: {r: 0.7, g: 0.8, b: 1, a: 1}
-  nightColor: {r: 0.05, g: 0.05, b: 0.15, a: 1}
+  nightColor: {r: 0.050980393, g: 0.050980393, b: 0.08627451, a: 1}
   density: 0.002
   startDistance: 10
   endDistance: 6500
