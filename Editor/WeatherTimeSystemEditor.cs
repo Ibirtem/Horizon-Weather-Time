@@ -57,6 +57,19 @@ namespace BlackHorizon.HorizonWeatherTime
 
         private bool _lutMissing = false;
 
+        private static readonly (string folder, Type type)[] MODULE_TYPES =
+        {
+            ("Lighting", typeof(LightingProfile)),
+            ("Sky",      typeof(SkyProfile)),
+            ("Clouds",   typeof(CloudProfile)),
+            ("Moon",     typeof(MoonProfile)),
+            ("Fog",      typeof(FogProfile)),
+            ("Effects",  typeof(EffectsProfile)),
+        };
+
+        private Dictionary<string, List<ScriptableObject>> _discoveredModules
+            = new Dictionary<string, List<ScriptableObject>>();
+
         private void OnEnable()
         {
             _target = (WeatherTimeSystem)target;
@@ -503,6 +516,7 @@ namespace BlackHorizon.HorizonWeatherTime
             var defaultPresets = EnsureDefaultPresets();
 
             ScanAndSyncProfiles();
+            ScanModuleFolders();
             EnsureProceduralTextures();
             CheckAndConfigureSkyboxMaterial();
             CheckAndConfigureParticleAssets();
@@ -731,6 +745,55 @@ namespace BlackHorizon.HorizonWeatherTime
 
                 Debug.Log($"<b><color=#33FF33>[SCAN]</color></b> <color=white>Found {foundProfiles.Count} weather profiles in {PRESETS_DIR}</color>");
             }
+        }
+
+        /// <summary>
+        /// Scans each module subfolder for available profiles.
+        /// Adding a new module type requires only a new entry in MODULE_TYPES.
+        /// </summary>
+        private void ScanModuleFolders()
+        {
+            _discoveredModules.Clear();
+
+            foreach (var (folder, type) in MODULE_TYPES)
+            {
+                string dir = $"{MODULES_DIR}/{folder}";
+                var results = new List<ScriptableObject>();
+
+                if (Directory.Exists(dir))
+                {
+                    string[] guids = AssetDatabase.FindAssets(
+                        $"t:{type.Name}", new[] { dir });
+
+                    foreach (string guid in guids)
+                    {
+                        string path = AssetDatabase.GUIDToAssetPath(guid);
+                        var module = AssetDatabase.LoadAssetAtPath(path, type)
+                            as ScriptableObject;
+                        if (module != null) results.Add(module);
+                    }
+
+                    results.Sort((a, b) =>
+                        string.Compare(a.name, b.name,
+                            StringComparison.OrdinalIgnoreCase));
+                }
+
+                _discoveredModules[folder] = results;
+            }
+        }
+
+        /// <summary>
+        /// Gets display names for a module type's dropdown.
+        /// </summary>
+        private string[] GetModuleNames(string folder)
+        {
+            if (!_discoveredModules.ContainsKey(folder)
+                || _discoveredModules[folder].Count == 0)
+                return new[] { "(None)" };
+
+            return _discoveredModules[folder]
+                .Select(m => m != null ? m.name : "(None)")
+                .ToArray();
         }
 
         private void CheckAndConfigureSkyboxMaterial()
