@@ -8,6 +8,7 @@ namespace BlackHorizon.HorizonWeatherTime
     public static class WeatherBakeUtility
     {
         private const string CONTAINER_NAME = "_BakedWeatherData";
+        private const string BUFFER_CONTAINER_NAME = "_ResolvedBuffers";
         private static bool _isBaking = false;
 
         private const string PROFILES_ROOT = "Assets/Horizon Weather & Time/Weather Profiles";
@@ -91,6 +92,8 @@ namespace BlackHorizon.HorizonWeatherTime
 
                 UpdatePresetMappings(system, discoveredModules);
 
+                EnsureResolvedBuffers(system);
+
                 EditorUtility.SetDirty(system);
                 AssetDatabase.SaveAssets();
 
@@ -104,6 +107,53 @@ namespace BlackHorizon.HorizonWeatherTime
             {
                 _isBaking = false;
             }
+        }
+
+        /// <summary>
+        /// Creates (or reuses) pre-allocated BakedProfileData components
+        /// for runtime interpolation. Separate container from baked modules,
+        /// so rebake doesn't destroy them.
+        /// </summary>
+        public static void EnsureResolvedBuffers(WeatherTimeSystem system)
+        {
+            Transform bufferRoot = system.transform.Find(BUFFER_CONTAINER_NAME);
+            if (bufferRoot == null)
+            {
+                var go = new GameObject(BUFFER_CONTAINER_NAME);
+                go.transform.SetParent(system.transform);
+                go.transform.localPosition = Vector3.zero;
+                bufferRoot = go.transform;
+            }
+            bufferRoot.gameObject.hideFlags = HideFlags.HideInHierarchy;
+
+            system._resolvedLighting = EnsureBufferComponent(bufferRoot, "_Lighting");
+            system._resolvedSky      = EnsureBufferComponent(bufferRoot, "_Sky");
+            system._resolvedCloud    = EnsureBufferComponent(bufferRoot, "_Cloud");
+            system._resolvedMoon     = EnsureBufferComponent(bufferRoot, "_Moon");
+            system._resolvedFog      = EnsureBufferComponent(bufferRoot, "_Fog");
+            system._resolvedEffects  = EnsureBufferComponent(bufferRoot, "_Effects");
+
+            EditorUtility.SetDirty(system);
+        }
+
+        private static BakedProfileData EnsureBufferComponent(Transform parent, string name)
+        {
+            Transform existing = parent.Find(name);
+            if (existing != null)
+            {
+                var comp = existing.GetComponent<BakedProfileData>();
+                if (comp != null) return comp;
+            }
+            else
+            {
+                var go = new GameObject(name);
+                go.transform.SetParent(parent);
+                go.transform.localPosition = Vector3.zero;
+                go.hideFlags = HideFlags.HideInHierarchy;
+                existing = go.transform;
+            }
+
+            return existing.gameObject.AddComponent<BakedProfileData>();
         }
 
         /// <summary>
@@ -176,6 +226,11 @@ namespace BlackHorizon.HorizonWeatherTime
 
             if (system.presetToLighting == null || 
                 (system.weatherProfilesList != null && system.presetToLighting.Length != system.weatherProfilesList.Length)) 
+                return true;
+
+            if (system._resolvedLighting == null || system._resolvedSky == null ||
+                system._resolvedCloud == null || system._resolvedMoon == null ||
+                system._resolvedFog == null || system._resolvedEffects == null)
                 return true;
 
             return false;

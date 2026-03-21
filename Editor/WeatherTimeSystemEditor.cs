@@ -141,7 +141,7 @@ namespace BlackHorizon.HorizonWeatherTime
             // 1. HEADER
             HorizonEditorUtils.DrawHorizonHeader("Weather & Time System", this);
 
-            // 0. CRITICAL WARNINGS
+            // Critical warnings
             if (_lutMissing)
             {
                 EditorGUILayout.BeginVertical(EditorStyles.helpBox);
@@ -201,6 +201,12 @@ namespace BlackHorizon.HorizonWeatherTime
             }
 
             so.ApplyModifiedProperties();
+        }
+
+        private bool SmoothLayerChanges
+        {
+            get { return EditorPrefs.GetBool("HorizonWT_Smooth", false); }
+            set { EditorPrefs.SetBool("HorizonWT_Smooth", value); }
         }
 
         private void GenerateAndAssignLUT()
@@ -365,33 +371,62 @@ namespace BlackHorizon.HorizonWeatherTime
                 int newMaster = EditorGUILayout.Popup("Master Preset", _currentProfileIndexProp.intValue, presetNames);
                 if (EditorGUI.EndChangeCheck())
                 {
-                    ApplyMasterPreset(newMaster, discoveredModules);
+                    if (Application.isPlaying && SmoothLayerChanges)
+                    {
+                        _currentProfileIndexProp.intValue = newMaster;
+                        serializedObject.ApplyModifiedProperties();
+                        _target.TransitionToWeatherProfile(newMaster, _target.defaultTransitionDuration);
+                    }
+                    else
+                    {
+                        ApplyMasterPreset(newMaster, discoveredModules);
+                    }
                 }
                 EditorGUILayout.EndVertical();
                 EditorGUILayout.Space(4);
             }
 
+            // --- TRANSITION SETTINGS ---
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            GUILayout.Label("Transitions", EditorStyles.boldLabel);
+
+            EditorGUILayout.PropertyField(
+                serializedObject.FindProperty("defaultTransitionDuration"),
+                new GUIContent("Duration (seconds)"));
+
+            bool newSmooth = EditorGUILayout.Toggle(
+                new GUIContent("Smooth Layer Changes",
+                    "When enabled, changing any dropdown in Play Mode triggers a smooth transition instead of an instant switch."),
+                SmoothLayerChanges);
+            if (newSmooth != SmoothLayerChanges) SmoothLayerChanges = newSmooth;
+
+            if (!Application.isPlaying && SmoothLayerChanges)
+            {
+                EditorGUILayout.HelpBox("Transitions activate in Play Mode. Editor preview is always instant.", MessageType.Info);
+            }
+
+            EditorGUILayout.EndVertical();
+            EditorGUILayout.Space(4);
+
             // --- PER-MODULE LAYER OVERRIDES ---
             EditorGUILayout.BeginVertical(EditorStyles.helpBox);
             GUILayout.Label("Layer Overrides", EditorStyles.boldLabel);
             EditorGUI.indentLevel++;
-            EditorGUI.BeginChangeCheck();
 
-            DrawModuleDropdown("Lighting", _lightingIndexProp, "Lighting", discoveredModules);
-            DrawModuleDropdown("Sky & Stars", _skyIndexProp, "Sky", discoveredModules);
-            DrawModuleDropdown("Clouds", _cloudIndexProp, "Clouds", discoveredModules);
-            DrawModuleDropdown("Moon", _moonIndexProp, "Moon", discoveredModules);
-            DrawModuleDropdown("Fog", _fogIndexProp, "Fog", discoveredModules);
-            DrawModuleDropdown("Effects", _effectsIndexProp, "Effects", discoveredModules);
+            DrawModuleDropdown("Lighting", _lightingIndexProp, "Lighting", WeatherTimeSystem.MOD_LIGHTING, discoveredModules);
+            DrawModuleDropdown("Sky & Stars", _skyIndexProp, "Sky", WeatherTimeSystem.MOD_SKY, discoveredModules);
+            DrawModuleDropdown("Clouds", _cloudIndexProp, "Clouds", WeatherTimeSystem.MOD_CLOUD, discoveredModules);
+            DrawModuleDropdown("Moon", _moonIndexProp, "Moon", WeatherTimeSystem.MOD_MOON, discoveredModules);
+            DrawModuleDropdown("Fog", _fogIndexProp, "Fog", WeatherTimeSystem.MOD_FOG, discoveredModules);
+            DrawModuleDropdown("Effects", _effectsIndexProp, "Effects", WeatherTimeSystem.MOD_EFFECTS, discoveredModules);
 
-            if (EditorGUI.EndChangeCheck())
-            {
-                serializedObject.ApplyModifiedProperties();
-                _target.Refresh();
-            }
+            if (Application.isPlaying && _target.IsTransitioning)
+                Repaint();
+
             EditorGUI.indentLevel--;
             EditorGUILayout.EndVertical();
 
+            // --- LOADED PROFILES & REBAKE ---
             EditorGUILayout.Space(4);
             EditorGUILayout.PropertyField(_allowedWeatherProfilesProp, new GUIContent("Loaded Profiles List"), true);
 
@@ -532,10 +567,13 @@ namespace BlackHorizon.HorizonWeatherTime
         }
 
         /// <summary>
-        /// Draws a dropdown that lists discovered modules of a specific type.
-        /// Shows module asset names, not preset names.
+        /// Draws a dropdown for a specific module layer.
+        /// In Play Mode with Smooth enabled, triggers transitions instead of instant switches.
+        /// Shows inline progress indicator during active transitions.
         /// </summary>
-        private void DrawModuleDropdown(string label, SerializedProperty indexProp, string folder, Dictionary<string, List<ScriptableObject>> discoveredModules)
+        private void DrawModuleDropdown(string label, SerializedProperty indexProp,
+            string folder, int moduleIndex,
+            Dictionary<string, List<ScriptableObject>> discoveredModules)
         {
             string[] names = new[] { "(None)" };
             if (discoveredModules.ContainsKey(folder) && discoveredModules[folder].Count > 0)
@@ -544,9 +582,63 @@ namespace BlackHorizon.HorizonWeatherTime
             }
 
             int maxIndex = Mathf.Max(0, names.Length - 1);
-            if (indexProp.intValue > maxIndex) indexProp.intValue = 0;
 
-            indexProp.intValue = EditorGUILayout.Popup(label, indexProp.intValue, names);
+            int displayIndex;
+            if (Application.isPlaying)
+            {
+                displayIndex = _target.GetDisplayModuleIndex(moduleIndex);
+            }
+            else
+            {
+                displayIndex = indexProp.intValue;
+            }
+            displayIndex = Mathf.Clamp(displayIndex, 0, maxIndex);
+
+            bool isTransitioning = Application.isPlaying && _target.IsModuleTransitioning(moduleIndex);
+
+            EditorGUILayout.BeginHorizontal();
+
+            Color originalColor = GUI.color;
+            if (isTransitioning) GUI.color = new Color(1f, 0.92f, 0.75f);
+
+            EditorGUI.BeginChangeCheck();
+            int newIndex = EditorGUILayout.Popup(label, displayIndex, names);
+            bool changed = EditorGUI.EndChangeCheck();
+
+            GUI.color = originalColor;
+
+            if (changed && newIndex != displayIndex)
+            {
+                if (Application.isPlaying && SmoothLayerChanges)
+                {
+                    _target.TransitionModuleTo(moduleIndex, newIndex, _target.defaultTransitionDuration);
+                }
+                else
+                {
+                    indexProp.intValue = newIndex;
+                    serializedObject.ApplyModifiedProperties();
+                    _target.Refresh();
+                }
+            }
+
+            if (isTransitioning)
+            {
+                float progress = _target.GetModuleProgress(moduleIndex);
+                GUILayout.Label($"{progress * 100f:F0}%", EditorStyles.miniLabel, GUILayout.Width(32));
+            }
+
+            EditorGUILayout.EndHorizontal();
+
+            if (isTransitioning)
+            {
+                float progress = _target.GetModuleProgress(moduleIndex);
+                Rect barRect = EditorGUILayout.GetControlRect(false, 3);
+                barRect.x += EditorGUIUtility.labelWidth;
+                barRect.width -= EditorGUIUtility.labelWidth;
+                EditorGUI.DrawRect(barRect, new Color(0.2f, 0.2f, 0.2f));
+                barRect.width *= progress;
+                EditorGUI.DrawRect(barRect, new Color(1f, 0.7f, 0.2f));
+            }
         }
 
         private void DrawTimeDebugInfo()

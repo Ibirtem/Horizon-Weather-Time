@@ -79,6 +79,62 @@ namespace BlackHorizon.HorizonWeatherTime
         [SerializeField, HideInInspector] private int _fogIndex = 0;
         [SerializeField, HideInInspector] private int _effectsIndex = 0;
 
+        // =========================================================
+        // WEATHER TRANSITIONS
+        // =========================================================
+        [Header("Weather Transitions")]
+        [Tooltip("Default duration for weather transitions in seconds.")]
+        public float defaultTransitionDuration = 10f;
+
+        public const int MOD_LIGHTING = 0;
+        public const int MOD_SKY = 1;
+        public const int MOD_CLOUD = 2;
+        public const int MOD_MOON = 3;
+        public const int MOD_FOG = 4;
+        public const int MOD_EFFECTS = 5;
+        private const int MODULE_COUNT = 6;
+
+        private bool[] _modTransitioning;
+        private float[] _modTransitionElapsed;
+        private float[] _modTransitionDuration;
+
+        private int _targetLightingIndex = 0;
+        private int _targetSkyIndex = 0;
+        private int _targetCloudIndex = 0;
+        private int _targetMoonIndex = 0;
+        private int _targetFogIndex = 0;
+        private int _targetEffectsIndex = 0;
+
+        // Pre-allocated interpolation buffers (created at bake time)
+        [HideInInspector] public BakedProfileData _resolvedLighting;
+        [HideInInspector] public BakedProfileData _resolvedSky;
+        [HideInInspector] public BakedProfileData _resolvedCloud;
+        [HideInInspector] public BakedProfileData _resolvedMoon;
+        [HideInInspector] public BakedProfileData _resolvedFog;
+        [HideInInspector] public BakedProfileData _resolvedEffects;
+
+        public int GetCurrentIndex(int module) { return GetIndex(module, false); }
+        public int GetTargetIndex(int module) { return GetIndex(module, true); }
+
+        private void CommitTargetToCurrent(int module)
+        {
+            SetIndex(module, false, GetIndex(module, true));
+        }
+
+        private void SetCurrentAndTarget(int module, int value)
+        {
+            SetIndex(module, false, value);
+            SetIndex(module, true, value);
+            if (_modTransitioning != null) _modTransitioning[module] = false;
+        }
+
+        public int TargetLightingIndex { get { return _targetLightingIndex; } }
+        public int TargetSkyIndex { get { return _targetSkyIndex; } }
+        public int TargetCloudIndex { get { return _targetCloudIndex; } }
+        public int TargetMoonIndex { get { return _targetMoonIndex; } }
+        public int TargetFogIndex { get { return _targetFogIndex; } }
+        public int TargetEffectsIndex { get { return _targetEffectsIndex; } }
+
         private int _lastActiveProfileIndex = -1;
 
 #if !COMPILER_UDONSHARP && UNITY_EDITOR
@@ -107,7 +163,7 @@ namespace BlackHorizon.HorizonWeatherTime
         [Header("Preset Mappings (Auto-generated)")]
         [HideInInspector] public int[] presetToLighting;
         [HideInInspector] public int[] presetToSky;
-        [HideInInspector] public int[] presetToCloud; 
+        [HideInInspector] public int[] presetToCloud;
         [HideInInspector] public int[] presetToMoon;
         [HideInInspector] public int[] presetToFog;
         [HideInInspector] public int[] presetToEffects;
@@ -209,6 +265,7 @@ namespace BlackHorizon.HorizonWeatherTime
 
         private void Start()
         {
+            InitTransitionArrays();
 #if !COMPILER_UDONSHARP && UNITY_EDITOR
             WarnAboutExternalLights();
 #endif
@@ -225,6 +282,7 @@ namespace BlackHorizon.HorizonWeatherTime
             if (isPlaying && !_isExternallyControlled)
             {
                 CalculateTime();
+                TickModuleTransitions();
                 UpdateSystem();
 
                 if (_weatherEffectsManager != null)
@@ -291,9 +349,9 @@ namespace BlackHorizon.HorizonWeatherTime
         {
             _isExternallyControlled = true;
             _sunTimeOfDay = Mathf.Clamp01(time01);
-
             _moonTimeOfDay = (_sunTimeOfDay - moonPhase + 1.0f) % 1.0f;
 
+            TickModuleTransitions();
             UpdateSystem();
 
             if (_weatherEffectsManager != null)
@@ -427,46 +485,21 @@ namespace BlackHorizon.HorizonWeatherTime
             );
         }
 
-        /// <summary>
-        /// Sets all module layers simultaneously. Used by network sync and master presets.
-        /// </summary>
         public void SetModuleStates(int lighting, int sky, int cloud, int moon, int fog, int effects)
         {
-            _lightingIndex = lighting;
-            _skyIndex = sky;
-            _cloudIndex = cloud;
-            _moonIndex = moon;
-            _fogIndex = fog;
-            _effectsIndex = effects;
+            CancelAllTransitions();
+            SetCurrentAndTarget(MOD_LIGHTING, lighting);
+            SetCurrentAndTarget(MOD_SKY, sky);
+            SetCurrentAndTarget(MOD_CLOUD, cloud);
+            SetCurrentAndTarget(MOD_MOON, moon);
+            SetCurrentAndTarget(MOD_FOG, fog);
+            SetCurrentAndTarget(MOD_EFFECTS, effects);
             UpdateSystem();
         }
 
-        public void SetCloudState(int cloudPresetIndex)
-        {
-            if (bakedCloudModules != null && cloudPresetIndex >= 0 && cloudPresetIndex < bakedCloudModules.Length)
-            {
-                _cloudIndex = cloudPresetIndex;
-                UpdateSystem();
-            }
-        }
-
-        public void SetFogState(int fogPresetIndex)
-        {
-            if (bakedFogModules != null && fogPresetIndex >= 0 && fogPresetIndex < bakedFogModules.Length)
-            {
-                _fogIndex = fogPresetIndex;
-                UpdateSystem();
-            }
-        }
-
-        public void SetEffectsState(int effectsPresetIndex)
-        {
-            if (bakedEffectsModules != null && effectsPresetIndex >= 0 && effectsPresetIndex < bakedEffectsModules.Length)
-            {
-                _effectsIndex = effectsPresetIndex;
-                UpdateSystem();
-            }
-        }
+        public void SetCloudState(int index) { SetModuleState(MOD_CLOUD, index); }
+        public void SetFogState(int index) { SetModuleState(MOD_FOG, index); }
+        public void SetEffectsState(int index) { SetModuleState(MOD_EFFECTS, index); }
 
         public void SetPlayerCameraPosition(Vector3 position)
         {
@@ -502,28 +535,34 @@ namespace BlackHorizon.HorizonWeatherTime
             if (bakedLightingModules == null || bakedLightingModules.Length == 0) return;
             if (_lightingManager == null) return;
 
-            if (bakedLightingModules != null && _lightingIndex >= bakedLightingModules.Length) _lightingIndex = 0;
-            if (bakedSkyModules != null && _skyIndex >= bakedSkyModules.Length) _skyIndex = 0;
-            if (bakedCloudModules != null && _cloudIndex >= bakedCloudModules.Length) _cloudIndex = 0;
-            if (bakedMoonModules != null && _moonIndex >= bakedMoonModules.Length) _moonIndex = 0;
-            if (bakedFogModules != null && _fogIndex >= bakedFogModules.Length) _fogIndex = 0;
-            if (bakedEffectsModules != null && _effectsIndex >= bakedEffectsModules.Length) _effectsIndex = 0;
+            ClampAllIndices();
+            InitTransitionArrays();
 
-            BakedProfileData lp = bakedLightingModules != null && bakedLightingModules.Length > 0 ? bakedLightingModules[_lightingIndex] : null;
-            BakedProfileData sp = bakedSkyModules != null && bakedSkyModules.Length > 0 ? bakedSkyModules[_skyIndex] : null;
-            BakedProfileData cp = bakedCloudModules != null && bakedCloudModules.Length > 0 ? bakedCloudModules[_cloudIndex] : null;
-            BakedProfileData mp = bakedMoonModules != null && bakedMoonModules.Length > 0 ? bakedMoonModules[_moonIndex] : null;
-            BakedProfileData fp = bakedFogModules != null && bakedFogModules.Length > 0 ? bakedFogModules[_fogIndex] : null;
-            BakedProfileData ep = bakedEffectsModules != null && bakedEffectsModules.Length > 0 ? bakedEffectsModules[_effectsIndex] : null;
+            // === RESOLVE ===
+            float tL = GetModuleTransitionFactor(MOD_LIGHTING);
+            float tS = GetModuleTransitionFactor(MOD_SKY);
+            float tC = GetModuleTransitionFactor(MOD_CLOUD);
+            float tM = GetModuleTransitionFactor(MOD_MOON);
+            float tF = GetModuleTransitionFactor(MOD_FOG);
+            float tE = GetModuleTransitionFactor(MOD_EFFECTS);
+
+            BakedProfileData lp = ResolveLightingState(tL);
+            BakedProfileData sp = ResolveSkyState(tS);
+            BakedProfileData cp = ResolveCloudState(tC);
+            BakedProfileData mp = ResolveMoonState(tM);
+            BakedProfileData fp = ResolveFogState(tF);
+            BakedProfileData ep = ResolveEffectsState(tE);
 
             if (lp == null) return;
 
-            if (_lastActiveProfileIndex != _effectsIndex)
+            int effectiveEffectsIndex = (_modTransitioning != null && _modTransitioning[MOD_EFFECTS])
+                ? _targetEffectsIndex : _effectsIndex;
+            if (_lastActiveProfileIndex != effectiveEffectsIndex)
             {
-                _lastActiveProfileIndex = _effectsIndex;
+                _lastActiveProfileIndex = effectiveEffectsIndex;
                 if (ep != null && ep.weatherEffectPrefab == null)
                 {
-                    Debug.LogWarning($"<b><color=#FF9900>[WARNING]</color></b> <color=white>[WeatherTimeSystem] Effects profile at index {_effectsIndex} has no Weather Effect Prefab.</color>", this);
+                    Debug.LogWarning($"<b><color=#FF9900>[WARNING]</color></b> <color=white>[WeatherTimeSystem] Effects profile at index {effectiveEffectsIndex} has no Weather Effect Prefab.</color>", this);
                 }
             }
 
@@ -546,7 +585,7 @@ namespace BlackHorizon.HorizonWeatherTime
             float moonPhaseFraction = Mathf.Clamp01(0.5f - 0.5f * sunMoonDot);
             float moonPhaseBrightness = moonPhaseFraction * moonPhaseFraction * moonPhaseFraction;
 
-            // --- DISPATCH TO MODULES ---
+            // === DISPATCH ===
             Color particleLightColor = ApplyLighting(sunLightRot, moonLightRot, lp, moonPhaseBrightness);
             Color currentFogColor = ApplyFog(fp, lp);
             ApplySky(sp, cp, mp, fp, currentFogColor);
@@ -740,6 +779,452 @@ namespace BlackHorizon.HorizonWeatherTime
                 ep.volumeBounds,
                 ep.particleSize,
                 ep.weatherDensity);
+        }
+
+        private void ClampAllIndices()
+        {
+            for (int i = 0; i < MODULE_COUNT; i++)
+            {
+                BakedProfileData[] arr = GetBakedArray(i);
+                int max = (arr != null) ? arr.Length : 0;
+                if (max == 0) continue;
+                if (GetIndex(i, false) >= max) SetIndex(i, false, 0);
+                if (GetIndex(i, true) >= max) SetIndex(i, true, 0);
+            }
+        }
+
+        /// <summary>
+        /// Generic instant module setter.
+        /// </summary>
+        public void SetModuleState(int module, int value)
+        {
+            BakedProfileData[] arr = GetBakedArray(module);
+            if (arr == null || value < 0 || value >= arr.Length) return;
+            SetCurrentAndTarget(module, value);
+            UpdateSystem();
+        }
+
+        public bool IsTransitioning
+        {
+            get
+            {
+                if (_modTransitioning == null) return false;
+                for (int i = 0; i < MODULE_COUNT; i++)
+                    if (_modTransitioning[i]) return true;
+                return false;
+            }
+        }
+
+        public bool IsModuleTransitioning(int moduleIndex)
+        {
+            if (_modTransitioning == null || moduleIndex < 0 || moduleIndex >= MODULE_COUNT)
+                return false;
+            return _modTransitioning[moduleIndex];
+        }
+
+        public float GetModuleProgress(int moduleIndex)
+        {
+            if (_modTransitioning == null || moduleIndex < 0 || moduleIndex >= MODULE_COUNT)
+                return 0f;
+            if (!_modTransitioning[moduleIndex]) return 0f;
+            float dur = _modTransitionDuration[moduleIndex];
+            if (dur <= 0f) return 1f;
+            return Mathf.SmoothStep(0f, 1f,
+                Mathf.Clamp01(_modTransitionElapsed[moduleIndex] / dur));
+        }
+
+        /// <summary>
+        /// Returns the index the dropdown should display:
+        /// target if transitioning, current if idle.
+        /// </summary>
+        public int GetDisplayModuleIndex(int moduleIndex)
+        {
+            if (_modTransitioning != null && moduleIndex >= 0 && moduleIndex < MODULE_COUNT
+                && _modTransitioning[moduleIndex])
+            {
+                return GetTargetIndex(moduleIndex);
+            }
+            return GetCurrentIndex(moduleIndex);
+        }
+
+        // =========================================================
+        // MODULE ROUTING
+        // =========================================================
+
+        /// <summary>
+        /// Returns current or target index for a module.
+        /// </summary>
+        private int GetIndex(int module, bool target)
+        {
+            switch (module)
+            {
+                case MOD_LIGHTING: return target ? _targetLightingIndex : _lightingIndex;
+                case MOD_SKY: return target ? _targetSkyIndex : _skyIndex;
+                case MOD_CLOUD: return target ? _targetCloudIndex : _cloudIndex;
+                case MOD_MOON: return target ? _targetMoonIndex : _moonIndex;
+                case MOD_FOG: return target ? _targetFogIndex : _fogIndex;
+                case MOD_EFFECTS: return target ? _targetEffectsIndex : _effectsIndex;
+                default: return 0;
+            }
+        }
+
+        /// <summary>
+        /// Sets current or target index for a module.
+        /// </summary>
+        private void SetIndex(int module, bool target, int value)
+        {
+            switch (module)
+            {
+                case MOD_LIGHTING: if (target) _targetLightingIndex = value; else _lightingIndex = value; break;
+                case MOD_SKY: if (target) _targetSkyIndex = value; else _skyIndex = value; break;
+                case MOD_CLOUD: if (target) _targetCloudIndex = value; else _cloudIndex = value; break;
+                case MOD_MOON: if (target) _targetMoonIndex = value; else _moonIndex = value; break;
+                case MOD_FOG: if (target) _targetFogIndex = value; else _fogIndex = value; break;
+                case MOD_EFFECTS: if (target) _targetEffectsIndex = value; else _effectsIndex = value; break;
+            }
+        }
+
+        /// <summary>
+        /// Routes module constant to its baked data array.
+        /// </summary>
+        private BakedProfileData[] GetBakedArray(int module)
+        {
+            switch (module)
+            {
+                case MOD_LIGHTING: return bakedLightingModules;
+                case MOD_SKY: return bakedSkyModules;
+                case MOD_CLOUD: return bakedCloudModules;
+                case MOD_MOON: return bakedMoonModules;
+                case MOD_FOG: return bakedFogModules;
+                case MOD_EFFECTS: return bakedEffectsModules;
+                default: return null;
+            }
+        }
+
+        // =========================================================
+        // TRANSITION API
+        // =========================================================
+
+        private void InitTransitionArrays()
+        {
+            if (_modTransitioning == null || _modTransitioning.Length != MODULE_COUNT)
+            {
+                _modTransitioning = new bool[MODULE_COUNT];
+                _modTransitionElapsed = new float[MODULE_COUNT];
+                _modTransitionDuration = new float[MODULE_COUNT];
+            }
+        }
+
+        /// <summary>
+        /// Advances all active module timers. Called once per frame.
+        /// </summary>
+        private void TickModuleTransitions()
+        {
+            if (_modTransitioning == null) return;
+            float dt = Time.deltaTime;
+            for (int i = 0; i < MODULE_COUNT; i++)
+            {
+                if (!_modTransitioning[i]) continue;
+                _modTransitionElapsed[i] += dt;
+                if (_modTransitionElapsed[i] >= _modTransitionDuration[i])
+                {
+                    FinalizeModuleTransition(i);
+                }
+            }
+        }
+
+        private void FinalizeModuleTransition(int moduleIndex)
+        {
+            if (_modTransitioning != null)
+                _modTransitioning[moduleIndex] = false;
+            CommitTargetToCurrent(moduleIndex);
+        }
+
+        private void CancelAllTransitions()
+        {
+            if (_modTransitioning == null) return;
+            for (int i = 0; i < MODULE_COUNT; i++)
+                _modTransitioning[i] = false;
+        }
+
+        /// <summary>
+        /// Returns the raw transition factor for a module (0 if idle).
+        /// </summary>
+        private float GetModuleTransitionFactor(int moduleIndex)
+        {
+            if (_modTransitioning == null || !_modTransitioning[moduleIndex]) return 0f;
+            float dur = _modTransitionDuration[moduleIndex];
+            if (dur <= 0f) return 0f;
+            return Mathf.SmoothStep(0f, 1f,
+                Mathf.Clamp01(_modTransitionElapsed[moduleIndex] / dur));
+        }
+
+        /// <summary>
+        /// Starts a per-module transition.
+        /// Usage: TransitionModuleTo(MOD_CLOUD, 2, 15f)
+        /// </summary>
+        public void TransitionModuleTo(int module, int targetIndex, float duration)
+        {
+            InitTransitionArrays();
+
+            if (duration <= 0f)
+            {
+                SetCurrentAndTarget(module, targetIndex);
+                return;
+            }
+
+            if (_modTransitioning[module])
+            {
+                FinalizeModuleTransition(module);
+            }
+
+            SetIndex(module, true, targetIndex);
+            _modTransitionDuration[module] = duration;
+            _modTransitionElapsed[module] = 0f;
+            _modTransitioning[module] = true;
+        }
+
+        // =========================================================
+        // TRANSITION PUBLIC API
+        // =========================================================
+
+        /// <summary>
+        /// Transitions ALL modules to a master profile.
+        /// </summary>
+        public void TransitionToWeatherProfile(int index, float duration)
+        {
+            if (presetToLighting == null || index < 0 || index >= presetToLighting.Length) return;
+
+            TransitionToModuleStates(
+                presetToLighting[index], presetToSky[index],
+                presetToCloud[index], presetToMoon[index],
+                presetToFog[index], presetToEffects[index],
+                duration
+            );
+        }
+
+        /// <summary>
+        /// Convenience overload using defaultTransitionDuration.
+        /// </summary>
+        public void TransitionToWeatherProfile(int index)
+        {
+            TransitionToWeatherProfile(index, defaultTransitionDuration);
+        }
+
+        /// <summary>
+        /// Transitions ALL modules independently but simultaneously.
+        /// </summary>
+        public void TransitionToModuleStates(int lighting, int sky, int cloud,
+            int moon, int fog, int effects, float duration)
+        {
+            if (duration <= 0f)
+            {
+                SetModuleStates(lighting, sky, cloud, moon, fog, effects);
+                return;
+            }
+
+            TransitionModuleTo(MOD_LIGHTING, lighting, duration);
+            TransitionModuleTo(MOD_SKY, sky, duration);
+            TransitionModuleTo(MOD_CLOUD, cloud, duration);
+            TransitionModuleTo(MOD_MOON, moon, duration);
+            TransitionModuleTo(MOD_FOG, fog, duration);
+            TransitionModuleTo(MOD_EFFECTS, effects, duration);
+        }
+
+        // =========================================================
+        // RESOLVE LAYER
+        // =========================================================
+
+        private BakedProfileData SafeGet(BakedProfileData[] array, int index)
+        {
+            if (array == null || array.Length == 0) return null;
+            if (index < 0 || index >= array.Length) return null;
+            return array[index];
+        }
+
+        // --- Lighting ---
+
+        private BakedProfileData ResolveLightingState(float t)
+        {
+            BakedProfileData from = SafeGet(bakedLightingModules, _lightingIndex);
+            if (from == null) return null;
+            if (t <= 0f || _resolvedLighting == null || _lightingIndex == _targetLightingIndex) return from;
+
+            BakedProfileData to = SafeGet(bakedLightingModules, _targetLightingIndex);
+            if (to == null) return from;
+
+            LerpLightingFields(_resolvedLighting, from, to, t);
+            return _resolvedLighting;
+        }
+
+        private void LerpLightingFields(BakedProfileData r, BakedProfileData a, BakedProfileData b, float t)
+        {
+            r.sunColorHorizon = Color.Lerp(a.sunColorHorizon, b.sunColorHorizon, t);
+            r.sunColorZenith = Color.Lerp(a.sunColorZenith, b.sunColorZenith, t);
+            r.sunIntensity = Mathf.Lerp(a.sunIntensity, b.sunIntensity, t);
+            r.moonLightColor = Color.Lerp(a.moonLightColor, b.moonLightColor, t);
+            r.moonLightIntensity = Mathf.Lerp(a.moonLightIntensity, b.moonLightIntensity, t);
+            r.daySkyColor = Color.Lerp(a.daySkyColor, b.daySkyColor, t);
+            r.dayEquatorColor = Color.Lerp(a.dayEquatorColor, b.dayEquatorColor, t);
+            r.dayGroundColor = Color.Lerp(a.dayGroundColor, b.dayGroundColor, t);
+            r.nightSkyColor = Color.Lerp(a.nightSkyColor, b.nightSkyColor, t);
+            r.nightEquatorColor = Color.Lerp(a.nightEquatorColor, b.nightEquatorColor, t);
+            r.nightGroundColor = Color.Lerp(a.nightGroundColor, b.nightGroundColor, t);
+        }
+
+        // --- Sky ---
+
+        private BakedProfileData ResolveSkyState(float t)
+        {
+            BakedProfileData from = SafeGet(bakedSkyModules, _skyIndex);
+            if (from == null) return null;
+            if (t <= 0f || _resolvedSky == null || _skyIndex == _targetSkyIndex) return from;
+
+            BakedProfileData to = SafeGet(bakedSkyModules, _targetSkyIndex);
+            if (to == null) return from;
+
+            LerpSkyFields(_resolvedSky, from, to, t);
+            return _resolvedSky;
+        }
+
+        private void LerpSkyFields(BakedProfileData r, BakedProfileData a, BakedProfileData b, float t)
+        {
+            r.rayleigh = Mathf.Lerp(a.rayleigh, b.rayleigh, t);
+            r.turbidity = Mathf.Lerp(a.turbidity, b.turbidity, t);
+            r.mieCoefficient = Mathf.Lerp(a.mieCoefficient, b.mieCoefficient, t);
+            r.mieDirectionalG = Mathf.Lerp(a.mieDirectionalG, b.mieDirectionalG, t);
+            r.exposure = Mathf.Lerp(a.exposure, b.exposure, t);
+
+            r.starsRotationSpeed = Mathf.Lerp(a.starsRotationSpeed, b.starsRotationSpeed, t);
+            r.starfieldAlignment = Vector3.Lerp(a.starfieldAlignment, b.starfieldAlignment, t);
+
+            r.starsCubemap = t < 0.5f ? a.starsCubemap : b.starsCubemap;
+            r.milkyWayCubemap = t < 0.5f ? a.milkyWayCubemap : b.milkyWayCubemap;
+
+            r.starsIntensity = Mathf.Lerp(a.starsIntensity, b.starsIntensity, t);
+            r.milkyWayIntensity = Mathf.Lerp(a.milkyWayIntensity, b.milkyWayIntensity, t);
+            r.twinkleScale = Mathf.Lerp(a.twinkleScale, b.twinkleScale, t);
+            r.twinkleSharpness = Mathf.Lerp(a.twinkleSharpness, b.twinkleSharpness, t);
+            r.twinkleSpeed = Mathf.Lerp(a.twinkleSpeed, b.twinkleSpeed, t);
+            r.twinkleStrength = Mathf.Lerp(a.twinkleStrength, b.twinkleStrength, t);
+
+            r.airglowIntensity = Mathf.Lerp(a.airglowIntensity, b.airglowIntensity, t);
+            r.airglowColor = Color.Lerp(a.airglowColor, b.airglowColor, t);
+            r.airglowHeight = Mathf.Lerp(a.airglowHeight, b.airglowHeight, t);
+        }
+
+        // --- Clouds ---
+
+        private BakedProfileData ResolveCloudState(float t)
+        {
+            BakedProfileData from = SafeGet(bakedCloudModules, _cloudIndex);
+            if (from == null) return null;
+            if (t <= 0f || _resolvedCloud == null || _cloudIndex == _targetCloudIndex) return from;
+
+            BakedProfileData to = SafeGet(bakedCloudModules, _targetCloudIndex);
+            if (to == null) return from;
+
+            LerpCloudFields(_resolvedCloud, from, to, t);
+            return _resolvedCloud;
+        }
+
+        private void LerpCloudFields(BakedProfileData r, BakedProfileData a, BakedProfileData b, float t)
+        {
+            r.cloudNoiseTexture = t < 0.5f ? a.cloudNoiseTexture : b.cloudNoiseTexture;
+            r.weatherMapTexture = t < 0.5f ? a.weatherMapTexture : b.weatherMapTexture;
+            r.blueNoiseTexture = t < 0.5f ? a.blueNoiseTexture : b.blueNoiseTexture;
+            r.curlNoiseTexture = t < 0.5f ? a.curlNoiseTexture : b.curlNoiseTexture;
+            r.cirrusNoiseTexture = t < 0.5f ? a.cirrusNoiseTexture : b.cirrusNoiseTexture;
+
+            r.cloudAltitude = Mathf.Lerp(a.cloudAltitude, b.cloudAltitude, t);
+            r.cloudScale = Mathf.Lerp(a.cloudScale, b.cloudScale, t);
+            r.cloudCoverage = Mathf.Lerp(a.cloudCoverage, b.cloudCoverage, t);
+            r.cloudDensity = Mathf.Lerp(a.cloudDensity, b.cloudDensity, t);
+            r.cloudDetailAmount = Mathf.Lerp(a.cloudDetailAmount, b.cloudDetailAmount, t);
+            r.cloudWispiness = Mathf.Lerp(a.cloudWispiness, b.cloudWispiness, t);
+            r.cloudWindSpeed = Vector2.Lerp(a.cloudWindSpeed, b.cloudWindSpeed, t);
+            r.cloudBaseColor = Color.Lerp(a.cloudBaseColor, b.cloudBaseColor, t);
+            r.cloudShadowColor = Color.Lerp(a.cloudShadowColor, b.cloudShadowColor, t);
+            r.cloudLightScattering = Mathf.Lerp(a.cloudLightScattering, b.cloudLightScattering, t);
+
+            r.cirrusCoverage = Mathf.Lerp(a.cirrusCoverage, b.cirrusCoverage, t);
+            r.cirrusOpacity = Mathf.Lerp(a.cirrusOpacity, b.cirrusOpacity, t);
+            r.cirrusScale = Mathf.Lerp(a.cirrusScale, b.cirrusScale, t);
+            r.cirrusWindSpeed = Vector2.Lerp(a.cirrusWindSpeed, b.cirrusWindSpeed, t);
+            r.cirrusTint = Color.Lerp(a.cirrusTint, b.cirrusTint, t);
+        }
+
+        // --- Moon ---
+
+        private BakedProfileData ResolveMoonState(float t)
+        {
+            BakedProfileData from = SafeGet(bakedMoonModules, _moonIndex);
+            if (from == null) return null;
+            if (t <= 0f || _resolvedMoon == null || _moonIndex == _targetMoonIndex) return from;
+
+            BakedProfileData to = SafeGet(bakedMoonModules, _targetMoonIndex);
+            if (to == null) return from;
+
+            LerpMoonFields(_resolvedMoon, from, to, t);
+            return _resolvedMoon;
+        }
+
+        private void LerpMoonFields(BakedProfileData r, BakedProfileData a, BakedProfileData b, float t)
+        {
+            r.moonTint = Color.Lerp(a.moonTint, b.moonTint, t);
+            r.moonTexture = t < 0.5f ? a.moonTexture : b.moonTexture;
+            r.moonSize = Mathf.Lerp(a.moonSize, b.moonSize, t);
+        }
+
+        // --- Fog ---
+
+        private BakedProfileData ResolveFogState(float t)
+        {
+            BakedProfileData from = SafeGet(bakedFogModules, _fogIndex);
+            if (from == null) return null;
+            if (t <= 0f || _resolvedFog == null || _fogIndex == _targetFogIndex) return from;
+
+            BakedProfileData to = SafeGet(bakedFogModules, _targetFogIndex);
+            if (to == null) return from;
+
+            LerpFogFields(_resolvedFog, from, to, t);
+            return _resolvedFog;
+        }
+
+        private void LerpFogFields(BakedProfileData r, BakedProfileData a, BakedProfileData b, float t)
+        {
+            r.fogEnabled = t < 0.5f ? a.fogEnabled : b.fogEnabled;
+            r.fogNightColor = Color.Lerp(a.fogNightColor, b.fogNightColor, t);
+            r.fogDayColor = Color.Lerp(a.fogDayColor, b.fogDayColor, t);
+            r.fogDensity = Mathf.Lerp(a.fogDensity, b.fogDensity, t);
+            r.fogStartDistance = Mathf.Lerp(a.fogStartDistance, b.fogStartDistance, t);
+            r.fogEndDistance = Mathf.Lerp(a.fogEndDistance, b.fogEndDistance, t);
+            r.fogMode = t < 0.5f ? a.fogMode : b.fogMode;
+            r.fogSkyBlend = Mathf.Lerp(a.fogSkyBlend, b.fogSkyBlend, t);
+        }
+
+        // --- Effects ---
+
+        private BakedProfileData ResolveEffectsState(float t)
+        {
+            BakedProfileData from = SafeGet(bakedEffectsModules, _effectsIndex);
+            if (from == null) return null;
+            if (t <= 0f || _resolvedEffects == null || _effectsIndex == _targetEffectsIndex) return from;
+
+            BakedProfileData to = SafeGet(bakedEffectsModules, _targetEffectsIndex);
+            if (to == null) return from;
+
+            LerpEffectsFields(_resolvedEffects, from, to, t);
+            return _resolvedEffects;
+        }
+
+        private void LerpEffectsFields(BakedProfileData r, BakedProfileData a, BakedProfileData b, float t)
+        {
+            r.weatherEffectPrefab = t < 0.5f ? a.weatherEffectPrefab : b.weatherEffectPrefab;
+            r.spawnHeightOffset = Mathf.Lerp(a.spawnHeightOffset, b.spawnHeightOffset, t);
+            r.volumeBounds = Vector3.Lerp(a.volumeBounds, b.volumeBounds, t);
+            r.particleSize = Mathf.Lerp(a.particleSize, b.particleSize, t);
+            r.weatherDensity = Mathf.Lerp(a.weatherDensity, b.weatherDensity, t);
         }
 
 #if !COMPILER_UDONSHARP && UNITY_EDITOR
