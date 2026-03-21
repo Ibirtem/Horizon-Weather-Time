@@ -273,42 +273,6 @@ namespace BlackHorizon.HorizonWeatherTime
         /// </summary>
         private static void LinkTexturesToModules()
         {
-            // --- CLOUD TEXTURES ---
-            Texture3D cloudNoise3D = AssetDatabase.LoadAssetAtPath<Texture3D>(
-                WeatherOptimizationGen.DEFAULT_CLOUD_NOISE_3D_PATH);
-            Texture2D weatherMap = AssetDatabase.LoadAssetAtPath<Texture2D>(
-                WeatherOptimizationGen.DEFAULT_WEATHER_MAP_PATH);
-            Texture2D blueNoise = AssetDatabase.LoadAssetAtPath<Texture2D>(
-                WeatherOptimizationGen.DEFAULT_BLUE_NOISE_PATH);
-            Texture2D cirrusNoise = AssetDatabase.LoadAssetAtPath<Texture2D>(
-                WeatherOptimizationGen.DEFAULT_CIRRUS_NOISE_PATH);
-            Texture2D curlNoise = AssetDatabase.LoadAssetAtPath<Texture2D>(
-                WeatherOptimizationGen.DEFAULT_CURL_NOISE_PATH);
-
-            string[] cloudGuids = AssetDatabase.FindAssets("t:CloudProfile",
-                new[] { $"{MODULES_DIR}/Clouds" });
-
-            foreach (string guid in cloudGuids)
-            {
-                string path = AssetDatabase.GUIDToAssetPath(guid);
-                CloudProfile cp = AssetDatabase.LoadAssetAtPath<CloudProfile>(path);
-                if (cp == null) continue;
-
-                bool dirty = false;
-                if (cp.cloudNoiseTexture == null && cloudNoise3D != null)
-                    { cp.cloudNoiseTexture = cloudNoise3D; dirty = true; }
-                if (cp.weatherMapTexture == null && weatherMap != null)
-                    { cp.weatherMapTexture = weatherMap; dirty = true; }
-                if (cp.blueNoiseTexture == null && blueNoise != null)
-                    { cp.blueNoiseTexture = blueNoise; dirty = true; }
-                if (cp.cirrusNoiseTexture == null && cirrusNoise != null)
-                    { cp.cirrusNoiseTexture = cirrusNoise; dirty = true; }
-                if (cp.curlNoiseTexture == null && curlNoise != null)
-                    { cp.curlNoiseTexture = curlNoise; dirty = true; }
-
-                if (dirty) EditorUtility.SetDirty(cp);
-            }
-
             string packageRoot = FindPackageRoot();
             string[] searchScope = packageRoot != null
                 ? new[] { packageRoot }

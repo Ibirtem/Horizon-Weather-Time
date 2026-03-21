@@ -13,10 +13,10 @@ MonoBehaviour:
   m_Name: Fog_Snow
   m_EditorClassIdentifier: 
   enabled: 1
-  fogMode: 3
-  dayColor: {r: 0.7, g: 0.8, b: 1, a: 1}
+  fogMode: 2
+  dayColor: {r: 0.61521006, g: 0.65913075, b: 0.745283, a: 1}
   nightColor: {r: 0.05, g: 0.05, b: 0.15, a: 1}
   density: 0.002
   startDistance: 10
   endDistance: 250
-  skyboxBlendIntegrity: 0.5
+  skyboxBlendIntegrity: 1

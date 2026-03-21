@@ -24,8 +24,8 @@ MonoBehaviour:
   detailAmount: 0.4
   wispiness: 0.1
   windSpeed: {x: 0.002, y: 0.001}
-  baseColor: {r: 0.3, g: 0.3, b: 0.35, a: 1}
-  shadowColor: {r: 0.1, g: 0.1, b: 0.15, a: 1}
+  baseColor: {r: 0.95, g: 0.95, b: 0.95, a: 1}
+  shadowColor: {r: 0.35, g: 0.4, b: 0.5, a: 1}
   lightScattering: 1.5
   cirrusNoiseTexture: {fileID: 0}
   cirrusCoverage: 0.67
