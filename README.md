@@ -58,7 +58,7 @@ Horizon uses a Master-Submodule architecture. You define specific pieces of your
 I hope that I can continue to improve Horizon constantly. Here is what is planned for the future:
 
 - **Advanced Weather Particles:** Further improvements to dynamic rain and snow systems for even greater realism and performance.
-- **Custom Glass/Transparency Handling:** The current depth-occlusion camera cannot see through standard transparent materials. A custom, lightweight glass shader will be added to correctly register as "physical" for weather occlusion (so rain doesn't fall through glass roofs).
+- **Custom Glass...?:** Add ways to make glass wet from rain or snowy...
 - **Deep Space Telescopic LODs:** High-resolution LOD systems for viewing other planets and celestial bodies through in-game telescopes (planned as a native feature).
 - **Infinite Cloud Enhancements:** Continuous upgrades to volumetric clouds, introducing more cloud types (cirrus, cumulonimbus), better lighting, and improved shapes.
 - **Auto-Snow Accumulation:** Tools to automatically generate and bake basic snowdrifts and terrain accumulation based on scene geometry.
