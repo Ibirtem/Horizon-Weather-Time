@@ -214,6 +214,31 @@ Shader "Horizon/Procedural Skybox"
             #define CLOUD_ABSORPTION_SCALE  0.002
 
             // =====================================================================
+            //  Twilight & Night Transition
+            // =====================================================================
+
+            // How rapidly the sky darkens after sunset.
+            #define TWILIGHT_STEEPNESS 1.0
+
+            // When additional darkening begins relative to sun altitude.
+            #define TWILIGHT_OFFSET 1.0
+
+            // Minimum sky brightness floor (prevents absolute black).
+            #define TWILIGHT_MIN_BRIGHTNESS 0.0005
+
+            // Multiple scattering: range below horizon. 
+            #define MS_TWILIGHT_RANGE 1.8
+
+            // Multiple scattering: strength at sunset.
+            #define MS_TWILIGHT_OFFSET 0.5
+
+            // Multiple scattering: intensity multiplier.
+            #define MS_INTENSITY 0.2
+
+            // Star luminance gate: sky brightness threshold to fully hide stars.
+            #define STAR_LUMINANCE_GATE 50.0
+
+            // =====================================================================
             //  UTILITY: Remap
             // =====================================================================
 
@@ -393,14 +418,18 @@ Shader "Horizon/Procedural Skybox"
                     }
 
                     // Multiple scattering approximation (vanishes at night)
-                    float msStrength = saturate(sunDir.y * 2.5 + 0.45);
+                    float msStrength = saturate(sunDir.y * MS_TWILIGHT_RANGE + MS_TWILIGHT_OFFSET);
                     msStrength *= msStrength;
                     if (msStrength > 0.001)
                     {
                         float3 msApprox = (betaR * localDensity.x + betaM * localDensity.y * 0.25) * stepSize;
-                        float sunH01 = saturate(sunDir.y * 3.0 + 0.3);
-                        float3 msColor = lerp(float3(0.01, 0.01, 0.02), float3(0.04, 0.06, 0.12), sunH01);
-                        inscatterContribution += msApprox * msColor * 0.15 * msStrength;
+                        float sunH01 = saturate(sunDir.y * 2.5 + 0.5);
+                        float3 msColor = lerp(float3(0.015, 0.018, 0.04), float3(0.05, 0.07, 0.13), sunH01);
+
+                        float viewElev = saturate(dot(normalize(samplePos), viewDir));
+                        float msHorizonMask = smoothstep(0.0, 0.15, abs(viewDir.y));
+
+                        inscatterContribution += msApprox * msColor * MS_INTENSITY * msStrength * msHorizonMask;
                     }
 
                     totalInscatter += totalTransmittance * inscatterContribution;
@@ -410,8 +439,8 @@ Shader "Horizon/Procedural Skybox"
                 float3 skyColor = totalInscatter;
 
                 // Night floor: suppress residual atmospheric glow
-                float nightDarkening = saturate(sunDir.y * 3.0 + 0.95);
-                skyColor *= max(nightDarkening * nightDarkening, 0.0005);
+                float nightDarkening = saturate(sunDir.y * TWILIGHT_STEEPNESS + TWILIGHT_OFFSET);
+                skyColor *= max(nightDarkening * nightDarkening, TWILIGHT_MIN_BRIGHTNESS);
 
                 if (hitsGround)
                 {
@@ -632,7 +661,7 @@ Shader "Horizon/Procedural Skybox"
                 // =============================================================
 
                 float skyLuminance = dot(finalColor, float3(0.2126, 0.7152, 0.0722));
-                float starVisibility = _StarsFade * saturate(1.0 - skyLuminance * 50.0);
+                float starVisibility = _StarsFade * saturate(1.0 - skyLuminance * STAR_LUMINANCE_GATE);
                 starVisibility *= smoothstep(-0.02, 0.15, direction.y);
 
                 if (starVisibility > 0.001)
@@ -952,14 +981,18 @@ Shader "Horizon/Procedural Skybox"
                                 startPos += direction * fineStep * dither;
 
                                 // --- Light source blending (sun ↔ moon) ---
-                                float sunWeight  = smoothstep(-0.04, 0.08, sunHeight);
+                                float cloudAltMeters = _CloudAltitude * 1000.0;
+                                float cloudSunsetAngle = -sqrt(2.0 * cloudAltMeters / CLOUD_PLANET_RADIUS);
+                                float sunWeight  = smoothstep(cloudSunsetAngle, cloudSunsetAngle + 0.08, sunHeight);
                                 float moonWeight = smoothstep(-0.1, 0.1, dot(moonDir, up));
 
-                                float3 mainLightDir   = lerp(moonDir, i.sunDirection, sunWeight);
-                                float3 sunLightColor  = lerp(float3(1, 0.6, 0.3),
-                                                            float3(1, 1, 1),
-                                                            saturate(sunHeight * 3.0));
-                                sunLightColor *= lerp(0.0, 1.0, sunWeight);
+                                float3 mainLightDir = lerp(moonDir, i.sunDirection, sunWeight);
+
+                                float sunElevClamped = max(sunHeight, 0.005);
+                                float atmosPath = min(1.0 / sunElevClamped, 40.0);
+                                float3 sunAtmosExtinction = exp(-RAYLEIGH_BETA * RAYLEIGH_SCALE_HEIGHT * atmosPath * 0.4);
+                                float3 sunLightColor = sunAtmosExtinction * sunWeight;
+
                                 float3 moonLightColor = _MoonColor.rgb * 0.008
                                                     * moonWeight * moonPhaseBrightness;
                                 float3 activeLightColor = lerp(moonLightColor,

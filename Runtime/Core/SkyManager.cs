@@ -293,7 +293,7 @@ namespace BlackHorizon.HorizonWeatherTime
             _skyboxInstance.SetVector(StarfieldRotationID, starfieldRotation);
 
             // Calculate Fade (Day/Night) based on physical sun height
-            float sunHeight = Mathf.InverseLerp(-0.1f, 0.15f, -sunDirection.y);
+            float sunHeight = Mathf.InverseLerp(-0.13f, -0.02f, -sunDirection.y);
             float starsAlpha = 1f - sunHeight;
             _skyboxInstance.SetFloat(StarsFadeID, starsAlpha);
 
