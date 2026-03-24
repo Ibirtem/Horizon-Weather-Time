@@ -22,21 +22,24 @@ The system is being developed and tested on the latest versions that were releva
 ## ⚡ Core Features
 
 - **Accurate Day & Night Cycles:** Sync your world to real-world timezones, and set physical **Latitude** and **Axial Tilt** to accurately simulate celestial trajectories, seasons, and true day/night lengths based on geographical location.
-- **Flexible Weather Direction:** Easily mix and match weather states using reusable Profiles. You can smoothly transition the global weather, or independently override specific layers (e.g., rolling in storm clouds while keeping the ambient lighting intact).
+- **Modular Weather States:** Easily mix and match weather conditions using reusable Profiles. You can smoothly transition the entire global weather, or independently override specific layers (like rolling in storm clouds while keeping the sun shining).
 - **Procedural Atmospherics:** A custom, optimized skybox shader that attempts to replicate real atmospheric phenomena. Includes Rayleigh & Mie scattering, physically-based Sun and Moon rendering, realistic starry skies, and raymarched volumetric clouds.
-- **Smart Dynamic Particles:** The weather particle system follows the player while automatically respecting roofs and overhangs using **depth-based occlusion**. Zero manual setup is required — no more placing "dry zone" triggers by hand. The system intelligently recognizes every interior, keeping your buildings dry automatically.
+- **Smart Dynamic Particles:** The weather particle system follows the player while automatically respecting roofs and overhangs using **depth-based occlusion**. Zero manual setup required — no more placing "dry zone" triggers by hand. Your interiors stay dry automatically.
 - **Built-in Generation Tools:** Includes Editor tools to generate volumetric cloud noises, Worley weather maps, and even accurate Star Maps based on the real-world **HYG Database**. _(Note: The system handles generating and assigning these automatically during setup, so manual work is optional!)_
-- **VRChat Ready:** Works out of the box with UdonSharp. All weather data is pre-baked at build time — no runtime overhead. Supports local client-side weather overrides.
+- **VRChat Ready:** Works out of the box with UdonSharp. All needed weather data is pre-baked at build time — no runtime overhead. Supports local client-side weather overrides.
 
 ---
 
 ## 🚀 Quick Start
 
-1.  Right-click anywhere in your scene hierarchy and select `GameObject -> Horizon -> Weather & Time System`.
-2.  Select the newly created **Horizon Weather & Time** object. The system will automatically generate all necessary base presets (Clear, Rain, Snow), noises, and star maps.
-3.  In the Inspector, configure your **Time Zone Offset**, **Latitude**, and **Axial Tilt** to ground your world in a specific geographic location.
-4.  Play with the **Sun Position** slider to test the day/night cycle and atmospheric scattering.
-5.  Expand the **Layer Overrides** section to manually mix different cloud, fog, or effect modules into your active weather preset.
+1. Right-click anywhere in your scene hierarchy and select `GameObject -> Horizon -> Weather Time System`.
+2. Select the newly created **Horizon Weather & Time** object. The system will automatically generate all the objects it needs, presets, the necessary LUT and noise textures, and other necessary things. This may take a bit of time!
+
+Once that's done, the system is ready to go. You can now configure it to your taste and needs in the Inspector:
+
+- Configure your **Time Zone Offset**, **Latitude**, and **Axial Tilt** to ground your world in a specific geographic location.
+- Play with the **Sun Position** slider to test the day/night cycle.
+- Expand the **Layer Overrides** section to manually mix different cloud, fog, or effect modules into your active weather preset.
 
 ---
 
