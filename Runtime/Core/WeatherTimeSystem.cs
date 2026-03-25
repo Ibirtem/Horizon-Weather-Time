@@ -30,7 +30,7 @@ namespace BlackHorizon.HorizonWeatherTime
         [Tooltip("Defines how the celestial bodies move over time.")]
         public TimeMode timeMode = TimeMode.SyncWithSystemClock;
         public bool simulateMoonPhase = true; [Range(-12f, 14f)]
-        public float timeZoneOffset = 3.0f;
+        public float timeZoneOffset = 0.0f;
 
         [Header("Simulation Settings")]
         [Range(0f, 1f)]

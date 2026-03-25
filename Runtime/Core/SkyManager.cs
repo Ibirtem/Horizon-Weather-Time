@@ -253,6 +253,10 @@ namespace BlackHorizon.HorizonWeatherTime
             _skyboxInstance.SetFloat(MieCoefficientID, mieCoeff);
             _skyboxInstance.SetFloat(MieDirectionalGID, mieG);
             _skyboxInstance.SetFloat(ExposureID, exposure);
+
+#if !COMPILER_UDONSHARP && UNITY_EDITOR
+            SyncAssetTextures();
+#endif
         }
 
         public void UpdateMoon(Vector3 moonDirection, Texture moonTex, Color moonColor, float moonSize)
@@ -271,6 +275,10 @@ namespace BlackHorizon.HorizonWeatherTime
 
             _skyboxInstance.SetColor(MoonColorID, moonColor);
             _skyboxInstance.SetFloat(MoonSizeID, moonSize);
+
+#if !COMPILER_UDONSHARP && UNITY_EDITOR
+            SyncAssetTextures();
+#endif
         }
 
         /// <summary>
@@ -306,6 +314,10 @@ namespace BlackHorizon.HorizonWeatherTime
             _skyboxInstance.SetFloat(TwinkleSharpnessID, twinkleSharpness);
             _skyboxInstance.SetFloat(TwinkleSpeedID, twinkleSpeed);
             _skyboxInstance.SetFloat(TwinkleStrengthID, twinkleStrength);
+
+#if !COMPILER_UDONSHARP && UNITY_EDITOR
+            SyncAssetTextures();
+#endif
         }
 
         public void UpdateClouds(Texture3D cloudTex, Texture weatherMapTex, Texture blueNoiseTex, Texture2D curlNoiseTex, float altitude, float scale, float coverage, float density, float detail, float wisp, Vector2 windSpeed, Color baseColor, Color shadowColor, float scatter)
@@ -354,6 +366,10 @@ namespace BlackHorizon.HorizonWeatherTime
             _skyboxInstance.SetColor(CloudColorID, baseColor);
             _skyboxInstance.SetColor(CloudShadowColorID, shadowColor);
             _skyboxInstance.SetFloat(CloudScatterID, scatter);
+
+#if !COMPILER_UDONSHARP && UNITY_EDITOR
+            SyncAssetTextures();
+#endif
         }
 
         public void UpdateCirrus(Texture cirrusTex, float coverage, float opacity, float scale, Vector2 windSpeed, Color tint)
@@ -381,6 +397,10 @@ namespace BlackHorizon.HorizonWeatherTime
             _skyboxInstance.SetFloat(CirrusOpacityID, opacity);
             _skyboxInstance.SetFloat(CirrusScaleID, scale);
             _skyboxInstance.SetColor(CirrusTintID, tint);
+
+#if !COMPILER_UDONSHARP && UNITY_EDITOR
+            SyncAssetTextures();
+#endif
         }
 
         /// <summary>
@@ -415,5 +435,81 @@ namespace BlackHorizon.HorizonWeatherTime
             _skyboxInstance.SetColor(AirglowColorID, airglowColor);
             _skyboxInstance.SetFloat(AirglowHeightID, airglowHeightKm);
         }
+
+#if !COMPILER_UDONSHARP && UNITY_EDITOR
+        private void SyncTextureToAsset(int propertyID, Texture tex)
+        {
+            if (!Application.isPlaying && skyboxMaterial != null && tex != null)
+            {
+                if (skyboxMaterial.GetTexture(propertyID) != tex)
+                {
+                    skyboxMaterial.SetTexture(propertyID, tex);
+                    UnityEditor.EditorUtility.SetDirty(skyboxMaterial);
+                }
+            }
+        }
+
+        private void SyncTextureToAssetString(string propertyName, Texture tex)
+        {
+            if (!Application.isPlaying && skyboxMaterial != null && tex != null)
+            {
+                if (skyboxMaterial.GetTexture(propertyName) != tex)
+                {
+                    skyboxMaterial.SetTexture(propertyName, tex);
+                    UnityEditor.EditorUtility.SetDirty(skyboxMaterial);
+                }
+            }
+        }
+#endif
+
+#if !COMPILER_UDONSHARP && UNITY_EDITOR
+        /// <summary>
+        /// Synchronizes textures from the virtual instance (_skyboxInstance)
+        /// to the physical material asset (skyboxMaterial).
+        /// </summary>
+        private void SyncAssetTextures()
+        {
+            if (Application.isPlaying || skyboxMaterial == null || _skyboxInstance == null) return;
+
+            bool isDirty = false;
+
+            void SyncTex(int id)
+            {
+                Texture tex = _skyboxInstance.GetTexture(id);
+                if (tex != null && skyboxMaterial.GetTexture(id) != tex)
+                {
+                    skyboxMaterial.SetTexture(id, tex);
+                    isDirty = true;
+                }
+            }
+
+            void SyncTexStr(string name)
+            {
+                Texture tex = _skyboxInstance.GetTexture(name);
+                if (tex != null && skyboxMaterial.GetTexture(name) != tex)
+                {
+                    skyboxMaterial.SetTexture(name, tex);
+                    isDirty = true;
+                }
+            }
+
+            SyncTex(TransmittanceLUT_ID);
+            SyncTex(MoonTexID);
+            SyncTexStr("_StarsCube");
+            SyncTexStr("_MilkyWayCube");
+            SyncTex(TwinkleNoiseTexID);
+            SyncTex(CloudNoise3DID);
+            SyncTex(CurlNoiseTexID);
+            SyncTex(WeatherMapTexID);
+            SyncTex(BlueNoiseTexID);
+            SyncTex(CirrusTexID);
+
+            if (isDirty)
+            {
+                UnityEditor.EditorUtility.SetDirty(skyboxMaterial);
+            }
+        }
+#endif
+
     }
 }
