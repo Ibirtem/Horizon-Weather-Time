@@ -552,9 +552,13 @@ Shader "Horizon/Procedural Skybox"
 
                 float verticalDrift = _CloudTime * 0.0003;
 
-                float2 curlUV = p.xz * CLOUD_CURL_UV_SCALE + _CloudWind * 0.05;
-                float2 curlOffset = tex2Dlod(_CurlNoiseTex, float4(curlUV, 0, 0)).rg 
+                float2 curlOffset = float2(0, 0);
+                if (applyErosion)
+                {
+                    float2 curlUV = p.xz * CLOUD_CURL_UV_SCALE + _CloudWind * 0.05;
+                    curlOffset = tex2Dlod(_CurlNoiseTex, float4(curlUV, 0, 0)).rg 
                                 * 2.0 - 1.0;
+                }
 
                 float3 noiseUVW = float3(
                     p.x * horizFreq + _CloudWind.x + curlOffset.x * CLOUD_CURL_STRENGTH,
