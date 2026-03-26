@@ -223,9 +223,6 @@ Shader "Horizon/Procedural Skybox"
             // When additional darkening begins relative to sun altitude.
             #define TWILIGHT_OFFSET 1.0
 
-            // Minimum sky brightness floor (prevents absolute black).
-            #define TWILIGHT_MIN_BRIGHTNESS 0.0005
-
             // Multiple scattering: range below horizon. 
             #define MS_TWILIGHT_RANGE 1.8
 
@@ -234,6 +231,9 @@ Shader "Horizon/Procedural Skybox"
 
             // Multiple scattering: intensity multiplier.
             #define MS_INTENSITY 0.2
+
+            // Base ambient scattering from stars and galactic dust.
+            #define STARLIGHT_AMBIENT float3(0.00006, 0.00012, 0.0003)
 
             // Star luminance gate: sky brightness threshold to fully hide stars.
             #define STAR_LUMINANCE_GATE 50.0
@@ -438,9 +438,13 @@ Shader "Horizon/Procedural Skybox"
 
                 float3 skyColor = totalInscatter;
 
-                // Night floor: suppress residual atmospheric glow
+                // Night floor
                 float nightDarkening = saturate(sunDir.y * TWILIGHT_STEEPNESS + TWILIGHT_OFFSET);
-                skyColor *= max(nightDarkening * nightDarkening, TWILIGHT_MIN_BRIGHTNESS);
+                skyColor *= (nightDarkening * nightDarkening);
+
+                float viewZenith = max(0.0, viewDir.y);
+                float starlightPath = 1.0 / (viewZenith + 0.4); 
+                skyColor += STARLIGHT_AMBIENT * starlightPath;
 
                 if (hitsGround)
                 {
