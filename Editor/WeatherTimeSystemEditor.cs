@@ -74,7 +74,50 @@ namespace BlackHorizon.HorizonWeatherTime
         {
             _target = (WeatherTimeSystem)target;
 
-            // Linking Core Properties
+            EnsureManagerReferences();
+            CacheSerializedProperties();
+
+            if (Application.isPlaying) return;
+
+            CheckAndConfigureDependencies();
+            CheckAndAutoSetupVRChatIntegration();
+            CheckSkyManagerInternalTextures();
+
+            ScheduleInitialBakeAndRefresh();
+        }
+
+        /// <summary>
+        /// Retrieves fresh references from the scene if Unity hasn't serialized them yet.
+        /// Prevents null references during the very first initialization.
+        /// </summary>
+        private void EnsureManagerReferences()
+        {
+            serializedObject.Update();
+
+            AssignManagerIfMissing("_lightingManager", typeof(LightingManager));
+            AssignManagerIfMissing("_skyManager", typeof(SkyManager));
+            AssignManagerIfMissing("_weatherEffectsManager", typeof(WeatherEffectsManager));
+            AssignManagerIfMissing("_reflectionManager", typeof(ReflectionManager));
+
+            serializedObject.ApplyModifiedProperties();
+            serializedObject.Update();
+        }
+
+        private void AssignManagerIfMissing(string propertyName, Type managerType)
+        {
+            var prop = serializedObject.FindProperty(propertyName);
+            if (prop != null && prop.objectReferenceValue == null)
+            {
+                prop.objectReferenceValue = _target.GetComponentInChildren(managerType);
+            }
+        }
+
+        /// <summary>
+        /// Links all serialized properties to their respective variables.
+        /// </summary>
+        private void CacheSerializedProperties()
+        {
+            // Core Time & Simulation
             _timeModeProp = serializedObject.FindProperty("timeMode");
             _timeZoneOffsetProp = serializedObject.FindProperty("timeZoneOffset");
             _sunTimeOfDayProp = serializedObject.FindProperty("_sunTimeOfDay");
@@ -84,15 +127,16 @@ namespace BlackHorizon.HorizonWeatherTime
             _moonPhaseProp = serializedObject.FindProperty("moonPhase");
             _lunarCycleDaysProp = serializedObject.FindProperty("lunarCycleDays");
 
+            // Astronomy
             _latitudeProp = serializedObject.FindProperty("latitude");
             _axialTiltProp = serializedObject.FindProperty("axialTilt");
             _daysInYearProp = serializedObject.FindProperty("daysInYear");
             _dayOfYearProp = serializedObject.FindProperty("dayOfYear");
 
+            // Profiles & State
             _allowedWeatherProfilesProp = serializedObject.FindProperty("weatherProfilesList");
             _currentProfileIndexProp = serializedObject.FindProperty("_currentProfileIndex");
 
-            // Linking Independent Layers
             _lightingIndexProp = serializedObject.FindProperty("_lightingIndex");
             _skyIndexProp = serializedObject.FindProperty("_skyIndex");
             _cloudIndexProp = serializedObject.FindProperty("_cloudIndex");
@@ -105,29 +149,37 @@ namespace BlackHorizon.HorizonWeatherTime
             _skyManagerProp = serializedObject.FindProperty("_skyManager");
             _weatherEffectsManagerProp = serializedObject.FindProperty("_weatherEffectsManager");
             _reflectionManagerProp = serializedObject.FindProperty("_reflectionManager");
+        }
 
-            // Init Logic
-            CheckAndConfigureDependencies();
-            CheckAndAutoSetupVRChatIntegration();
-
-            // Initial check for LUT
-            CheckSkyManagerInternalTextures();
-
+        /// <summary>
+        /// Delays the baking and refreshing process until the Editor is ready,
+        /// ensuring all generated assets and materials are correctly saved to disk.
+        /// </summary>
+        private void ScheduleInitialBakeAndRefresh()
+        {
             EditorApplication.delayCall += () =>
             {
-                if (_target != null)
+                if (_target == null) return;
+
+                var discovered = WeatherBakeUtility.ScanModuleFolders();
+                bool needsModuleBake = WeatherBakeUtility.NeedsRebakeModules(_target, discovered);
+
+                if (needsModuleBake)
                 {
-                    var discovered = WeatherBakeUtility.ScanModuleFolders();
-                    bool needsModuleBake = WeatherBakeUtility.NeedsRebakeModules(_target, discovered);
+                    WeatherBakeUtility.BakeModules(_target, discovered);
 
-                    if (needsModuleBake)
+                    if (_target.weatherProfilesList != null && _target.weatherProfilesList.Length > 0)
                     {
-                        WeatherBakeUtility.BakeModules(_target, discovered);
+                        _target.SetWeatherProfile(0);
                     }
+                }
 
-                    _target.Refresh();
+                _target.Refresh();
+                UnityEditor.SceneView.RepaintAll();
 
-                    UnityEditor.SceneView.RepaintAll();
+                if (needsModuleBake)
+                {
+                    AssetDatabase.SaveAssets();
                 }
             };
         }
@@ -141,7 +193,6 @@ namespace BlackHorizon.HorizonWeatherTime
             // 1. HEADER
             HorizonEditorUtils.DrawHorizonHeader("Weather & Time System", this);
 
-            // Critical warnings
             if (_lutMissing)
             {
                 EditorGUILayout.BeginVertical(EditorStyles.helpBox);
@@ -715,6 +766,8 @@ namespace BlackHorizon.HorizonWeatherTime
             EnsureProceduralTextures();
             EnsureDefaultPresets();
 
+            ScanAndSyncProfiles();
+
             CheckAndConfigureSkyboxMaterial();
             CheckAndConfigureParticleAssets();
             CheckAndConfigureOcclusionCamera();
@@ -825,9 +878,10 @@ namespace BlackHorizon.HorizonWeatherTime
 
             T copy = ScriptableObject.CreateInstance<T>();
             EditorUtility.CopySerialized(source, copy);
-            AssetDatabase.CreateAsset(copy, outputPath);
 
             FillGeneratedTextures(copy);
+
+            AssetDatabase.CreateAsset(copy, outputPath);
 
             return copy;
         }
@@ -1057,7 +1111,8 @@ namespace BlackHorizon.HorizonWeatherTime
                 tex = GenerateRealisticSnowFlake(128);
 
                 File.WriteAllBytes(texPath, tex.EncodeToPNG());
-                AssetDatabase.Refresh();
+
+                AssetDatabase.ImportAsset(texPath, ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
 
                 TextureImporter importer = AssetImporter.GetAtPath(texPath) as TextureImporter;
                 if (importer != null)
@@ -1067,6 +1122,8 @@ namespace BlackHorizon.HorizonWeatherTime
                     importer.wrapMode = TextureWrapMode.Clamp;
                     importer.filterMode = FilterMode.Bilinear;
                     importer.textureCompression = TextureImporterCompression.Uncompressed;
+
+                    EditorUtility.SetDirty(importer);
                     importer.SaveAndReimport();
                 }
 
@@ -1180,7 +1237,8 @@ namespace BlackHorizon.HorizonWeatherTime
                 tex = GenerateRealisticRaindrop(64);
 
                 File.WriteAllBytes(texPath, tex.EncodeToPNG());
-                AssetDatabase.Refresh();
+
+                AssetDatabase.ImportAsset(texPath, ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
 
                 TextureImporter importer = AssetImporter.GetAtPath(texPath) as TextureImporter;
                 if (importer != null)
@@ -1191,6 +1249,8 @@ namespace BlackHorizon.HorizonWeatherTime
                     importer.filterMode = FilterMode.Bilinear;
                     importer.mipmapEnabled = true;
                     importer.textureCompression = TextureImporterCompression.Uncompressed;
+
+                    EditorUtility.SetDirty(importer);
                     importer.SaveAndReimport();
                 }
                 tex = AssetDatabase.LoadAssetAtPath<Texture2D>(texPath);

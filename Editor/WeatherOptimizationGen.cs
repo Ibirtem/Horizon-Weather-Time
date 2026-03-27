@@ -1047,7 +1047,8 @@ namespace BlackHorizon.HorizonWeatherTime
             if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
 
             File.WriteAllBytes(path, tex.EncodeToPNG());
-            AssetDatabase.Refresh();
+            
+            AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceSynchronousImport | ImportAssetOptions.ForceUpdate);
 
             TextureImporter importer = AssetImporter.GetAtPath(path) as TextureImporter;
             if (importer != null)
@@ -1057,6 +1058,8 @@ namespace BlackHorizon.HorizonWeatherTime
                 importer.sRGBTexture = false;
                 importer.mipmapEnabled = isBilinear;
                 importer.textureCompression = TextureImporterCompression.Uncompressed;
+                
+                EditorUtility.SetDirty(importer);
                 importer.SaveAndReimport();
             }
             return AssetDatabase.LoadAssetAtPath<Texture2D>(path);
