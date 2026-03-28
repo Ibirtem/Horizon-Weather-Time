@@ -986,7 +986,10 @@ Shader "Horizon/Procedural Skybox"
                             {
                                 float2 ditherUV = fmod(i.vertex.xy, 64.0) / 64.0;
                                 float dither = tex2Dlod(_BlueNoiseTex, float4(ditherUV, 0, 0)).r;
-                                startPos += direction * fineStep * dither;
+                                
+                                float linearStep = rayLength / float(CLOUD_STEPS);
+                                float ditherOffset = dither * clamp(linearStep, 100.0, 150.0);
+                                float lastT = 0.0;
 
                                 // --- Light source blending (sun ↔ moon) ---
                                 float cloudAltMeters = _CloudAltitude * 1000.0;
@@ -1022,26 +1025,32 @@ Shader "Horizon/Procedural Skybox"
                                 float absorptionCoeff = _CloudScatter * CLOUD_ABSORPTION_SCALE;
 
                                 half3 accumColor = 0;
-                                float  transmittance = 1.0;
-
-                                float t = 0.0;
-                                float coarseStep = fineStep * CLOUD_EMPTY_STEP_MUL;
+                                float transmittance = 1.0;
+                                
+                                float stepFraction = 1.0 / float(CLOUD_STEPS);
 
                                 [loop]
                                 for (int j = 0; j < CLOUD_STEPS; j++)
                                 {
+                                    float normT = float(j + 1) * stepFraction;
+                                    float curveT = normT * sqrt(normT);
+                                    float targetT = curveT * rayLength;
+                                    
+                                    float currentStep = targetT - lastT;
+                                    float t = lastT + ditherOffset;
+                                    
                                     if (t >= rayLength || transmittance < CLOUD_TRANSMITTANCE_MIN) break;
 
                                     float3 pos = startPos + direction * t;
                                     float distAlongRay = distToStart + t;
+                                    float lod = saturate(distAlongRay / 60000.0) * 4.0;
 
                                     // --- Level 1: height bounds check ---
-                                    float heightInfo = (length(pos) - cloudBottomRad)
-                                                    / CLOUD_THICKNESS;
+                                    float heightInfo = (length(pos) - cloudBottomRad) / CLOUD_THICKNESS;
 
                                     if (heightInfo < -0.02 || heightInfo > 1.02)
                                     {
-                                        t += coarseStep;
+                                        lastT = targetT;
                                         continue;
                                     }
                                     heightInfo = saturate(heightInfo);
@@ -1049,18 +1058,13 @@ Shader "Horizon/Procedural Skybox"
                                     // --- Level 2: weather-map pre-check ---
                                     float2 weatherUV = pos.xz * CLOUD_WEATHER_FREQ * _CloudScale
                                                     + (_CloudWind * 0.1) + weatherDrift;
-                                    float4 wData = tex2Dlod(_WeatherMapTex,
-                                                            float4(weatherUV, 0, 0));
+                                    float4 wData = tex2Dlod(_WeatherMapTex, float4(weatherUV, 0, lod));
 
-                                    float macro = smoothstep(
-                                        1.0 - _CloudCoverage - 0.15,
-                                        1.0 - _CloudCoverage + 0.15,
-                                        wData.r
-                                    );
+                                    float macro = smoothstep(1.0 - _CloudCoverage - 0.15, 1.0 - _CloudCoverage + 0.15, wData.r);
 
                                     if (macro < 0.01)
                                     {
-                                        t += coarseStep;
+                                        lastT = targetT;
                                         continue;
                                     }
 
@@ -1072,13 +1076,12 @@ Shader "Horizon/Procedural Skybox"
                                     weather.density  = wData.a;
                                     weather.macro    = macro;
 
-                                    float lod = saturate(distAlongRay / 60000.0) * 4.0;
                                     float dens = SampleCloudDensityUnified(pos, heightInfo, lod, weather, true);
 
                                     // --- Level 3: density zero ---
                                     if (dens < 0.001)
                                     {
-                                        t += fineStep;
+                                        lastT = targetT;
                                         continue;
                                     }
 
@@ -1090,73 +1093,53 @@ Shader "Horizon/Procedural Skybox"
                                     for (int k = 0; k < CLOUD_LIGHT_STEPS; k++)
                                     {
                                         float t_k = (float)k;
-                                        float t0 = CLOUD_THICKNESS * (t_k * t_k)
-                                                / LIGHT_DENOM;
-                                        float t1 = CLOUD_THICKNESS
-                                                * ((t_k + 1.0) * (t_k + 1.0))
-                                                / LIGHT_DENOM;
+                                        float t0 = CLOUD_THICKNESS * (t_k * t_k) / LIGHT_DENOM;
+                                        float t1 = CLOUD_THICKNESS * ((t_k + 1.0) * (t_k + 1.0)) / LIGHT_DENOM;
                                         float lightDist = (t0 + t1) * 0.5;
 
-                                        float3 lightSamplePos = pos
-                                                            + mainLightDir * lightDist;
-                                        float lightH = (length(lightSamplePos)
-                                                    - cloudBottomRad) / CLOUD_THICKNESS;
+                                        float3 lightSamplePos = pos + mainLightDir * lightDist;
+                                        float lightH = (length(lightSamplePos) - cloudBottomRad) / CLOUD_THICKNESS;
 
                                         if (lightH >= 0.0 && lightH <= 1.0)
                                         {
                                             float ld = SampleCloudDensityUnified(lightSamplePos, lightH, 
                                                 lod + 1.5, weather, false);
                                             totalLightDens += ld;
-                                            lightOpticalDepth += ld * (t1 - t0)
-                                                            * absorptionCoeff;
+                                            lightOpticalDepth += ld * (t1 - t0) * absorptionCoeff;
                                         }
                                     }
 
                                     // ---- Analytical tail ----
                                     float avgLightDens = totalLightDens * 0.25;
-                                    float remainingThickness = CLOUD_THICKNESS
-                                                            * (5.0 / LIGHT_DENOM);
-                                    lightOpticalDepth += avgLightDens
-                                                    * remainingThickness * 0.4
-                                                    * absorptionCoeff;
+                                    float remainingThickness = CLOUD_THICKNESS * (5.0 / LIGHT_DENOM);
+                                    lightOpticalDepth += avgLightDens * remainingThickness * 0.4 * absorptionCoeff;
 
                                     // ---- Beer-Lambert ----
                                     float beerTerm = exp(-lightOpticalDepth);
-
-                                    // ---- Beer-Powder ----
-                                    float powderTerm = 1.0
-                                                    - exp(-lightOpticalDepth * 2.0);
-                                    float powderWeight = lerp(0.8, 0.2,
-                                        saturate(cloudCosTheta * 0.5 + 0.5));
-                                    float beerPowder = beerTerm
-                                        * lerp(1.0, powderTerm * 2.0, powderWeight);
+                                    float powderTerm = 1.0 - exp(-lightOpticalDepth * 2.0);
+                                    float powderWeight = lerp(0.8, 0.2, saturate(cloudCosTheta * 0.5 + 0.5));
+                                    float beerPowder = beerTerm * lerp(1.0, powderTerm * 2.0, powderWeight);
                                     float nightBeer = lerp(beerPowder, 0.1, 0.5);
                                     beerPowder = lerp(nightBeer, beerPowder, sunWeight);
 
                                     // ---- Ambient from height ----
                                     float dayHeightGrad   = lerp(0.3, 1.0, heightInfo);
                                     float nightHeightGrad = lerp(0.7, 1.0, heightInfo);
-                                    float heightGradient  = lerp(nightHeightGrad,
-                                                                dayHeightGrad, sunWeight);
+                                    float heightGradient  = lerp(nightHeightGrad, dayHeightGrad, sunWeight);
 
-                                    // ---- Combine lighting ----
-                                    half3 directLight  = activeLightColor * beerPowder
-                                                        * phaseVal;
+                                    half3 directLight  = activeLightColor * beerPowder * phaseVal;
                                     half3 ambientLight = activeAmbient * heightGradient;
-                                    half3 cloudPointColor = _CloudColor.rgb
-                                                        * (directLight + ambientLight);
+                                    half3 cloudPointColor = _CloudColor.rgb * (directLight + ambientLight);
 
                                     // ---- View ray extinction ----
-                                    float stepOpticalDepth = dens * fineStep
-                                                        * absorptionCoeff;
+                                    float stepOpticalDepth = dens * currentStep * absorptionCoeff;
                                     float stepTransmittance = exp(-stepOpticalDepth);
                                     float alphaStep = 1.0 - stepTransmittance;
 
-                                    accumColor   += cloudPointColor * alphaStep
-                                                * transmittance;
+                                    accumColor   += cloudPointColor * alphaStep * transmittance;
                                     transmittance *= stepTransmittance;
 
-                                    t += fineStep;
+                                    lastT = targetT;
                                 }
 
                                 // --- Post-processing ---
