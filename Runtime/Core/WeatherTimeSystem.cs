@@ -1246,5 +1246,22 @@ namespace BlackHorizon.HorizonWeatherTime
             return light == _lightingManager.SunLight || light == _lightingManager.MoonLight;
         }
 #endif
+
+        // =========================================================
+        // EXTERNAL API BRIDGE (for cross-package SendCustomEvent)
+        // =========================================================
+        [HideInInspector] public int _pendingProfileIndex = -1;
+
+        /// <summary>
+        /// Called via SendCustomEvent from external packages.
+        /// Reads _pendingProfileIndex, applies profile, then resets.
+        /// </summary>
+        public void ApplyPendingProfile()
+        {
+            if (_pendingProfileIndex < 0) return;
+            SetWeatherProfile(_pendingProfileIndex);
+            _pendingProfileIndex = -1;
+            Refresh();
+        }
     }
 }
