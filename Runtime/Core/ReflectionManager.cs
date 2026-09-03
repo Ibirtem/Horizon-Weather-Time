@@ -33,6 +33,27 @@ namespace BlackHorizon.HorizonWeatherTime
             }
         }
 
+#if !COMPILER_UDONSHARP && UNITY_EDITOR
+        /// <summary>
+        /// Validates probe configuration in Editor and migrates existing probes
+        /// from AllFacesAtOnce to IndividualFaces.
+        /// </summary>
+        private void OnValidate()
+        {
+            if (mainReflectionProbe == null)
+            {
+                mainReflectionProbe = GetComponentInChildren<ReflectionProbe>();
+            }
+
+            if (mainReflectionProbe != null &&
+                mainReflectionProbe.timeSlicingMode != UnityEngine.Rendering.ReflectionProbeTimeSlicingMode.IndividualFaces)
+            {
+                mainReflectionProbe.timeSlicingMode = UnityEngine.Rendering.ReflectionProbeTimeSlicingMode.IndividualFaces;
+                UnityEditor.EditorUtility.SetDirty(mainReflectionProbe);
+            }
+        }
+#endif
+
         public void ManualUpdate()
         {
             if (mainReflectionProbe != null)
@@ -59,6 +80,9 @@ namespace BlackHorizon.HorizonWeatherTime
             }
         }
 
+        /// <summary>
+        /// Creates or configures the global Realtime Reflection Probe.
+        /// </summary>
         public void EnsureProbeExists()
         {
 #if !COMPILER_UDONSHARP && UNITY_EDITOR
@@ -75,7 +99,7 @@ namespace BlackHorizon.HorizonWeatherTime
                     
                     mainReflectionProbe.mode = UnityEngine.Rendering.ReflectionProbeMode.Realtime;
                     mainReflectionProbe.refreshMode = UnityEngine.Rendering.ReflectionProbeRefreshMode.ViaScripting;
-                    mainReflectionProbe.timeSlicingMode = UnityEngine.Rendering.ReflectionProbeTimeSlicingMode.AllFacesAtOnce;
+                    mainReflectionProbe.timeSlicingMode = UnityEngine.Rendering.ReflectionProbeTimeSlicingMode.IndividualFaces;
                     
                     mainReflectionProbe.importance = 1;
                     mainReflectionProbe.boxProjection = false;
@@ -85,6 +109,14 @@ namespace BlackHorizon.HorizonWeatherTime
                     mainReflectionProbe.clearFlags = UnityEngine.Rendering.ReflectionProbeClearFlags.Skybox;
 
                     mainReflectionProbe.cullingMask = 0; 
+                }
+            }
+            else
+            {
+                if (mainReflectionProbe.timeSlicingMode != UnityEngine.Rendering.ReflectionProbeTimeSlicingMode.IndividualFaces)
+                {
+                    mainReflectionProbe.timeSlicingMode = UnityEngine.Rendering.ReflectionProbeTimeSlicingMode.IndividualFaces;
+                    UnityEditor.EditorUtility.SetDirty(mainReflectionProbe);
                 }
             }
 #endif
