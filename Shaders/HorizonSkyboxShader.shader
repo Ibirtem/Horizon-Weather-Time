@@ -194,14 +194,15 @@ Shader "Horizon/Procedural Skybox"
             #define ATMOSPHERE_STEPS 16
 
             // --- Cloud Shape ---
-            #define CLOUD_NOISE_FREQ        0.00045
-            #define CLOUD_WEATHER_FREQ      0.000038
+            #define CLOUD_NOISE_FREQ        0.0003
+            #define CLOUD_WEATHER_FREQ      0.00004
             #define CLOUD_VERTICAL_SCALE    2.0
             #define CLOUD_CURL_UV_SCALE     0.0004
             #define CLOUD_CURL_STRENGTH     0.08
 
             // --- Cloud Raymarching ---
-            #define CLOUD_STEPS             48
+            #define CLOUD_MAX_STEPS         80
+            #define CLOUD_MIN_STEPS         36
             #define CLOUD_EMPTY_STEP_MUL    3.0
             #define CLOUD_PLANET_RADIUS     600000.0
             #define CLOUD_MAX_DISTANCE      60000.0
@@ -244,7 +245,7 @@ Shader "Horizon/Procedural Skybox"
 
             float Remap(float value, float inMin, float inMax, float outMin, float outMax)
             {
-                return outMin + (value - inMin) / (inMax - inMin) * (outMax - outMin);
+                return outMin + saturate((value - inMin) / (inMax - inMin)) * (outMax - outMin);
             }
 
             // =====================================================================
@@ -519,17 +520,23 @@ Shader "Horizon/Procedural Skybox"
             //  CLOUD HEIGHT GRADIENT
             // =====================================================================
 
+            /**
+            * Height gradient profile based on Andrew Schneider (SIGGRAPH 2015).
+            * Continuous upward tapering forces 3D noise peaks to form billowing cauliflower domes.
+            */
             float CloudHeightGradient(float h, float cloudType)
             {
-                float stratus = smoothstep(0.0, 0.04, h) 
-                            * (1.0 - smoothstep(0.08, 0.25, h));
-                
-                float cumulus = smoothstep(0.0, 0.08, h) 
-                            * (1.0 - smoothstep(0.30, 0.70, h));
-                
-                float cb = smoothstep(0.0, 0.03, h) 
-                        * (1.0 - smoothstep(0.70, 1.0, h));
-                
+                // Cumulus: solid body up to 50% height, then gradual dome dissipation up to 0.88
+                float bottomGrad = saturate(Remap(h, 0.0, 0.10, 0.0, 1.0));
+                float topGrad    = saturate(Remap(h, 0.88, 0.35, 0.0, 1.0));
+                float cumulus    = bottomGrad * topGrad;
+
+                // Stratus: low flat overcast sheet
+                float stratus    = saturate(Remap(h, 0.0, 0.04, 0.0, 1.0)) * saturate(Remap(h, 0.25, 0.08, 0.0, 1.0));
+
+                // Cumulonimbus: massive vertical anvil tower
+                float cb         = saturate(Remap(h, 0.0, 0.05, 0.0, 1.0)) * saturate(Remap(h, 0.98, 0.50, 0.0, 1.0));
+
                 float a = lerp(stratus, cumulus, saturate(cloudType * 2.0));
                 return lerp(a, cb, saturate(cloudType * 2.0 - 1.0));
             }
@@ -543,71 +550,73 @@ Shader "Horizon/Procedural Skybox"
                 return saturate(Remap(baseNoise, 1.0 - coverage, 1.0, 0.0, 1.0));
             }
 
+            /**
+            * Evaluates volumetric density using the canonical Decima/Frostbite modeling pipeline:
+            * 1. Base Perlin-Worley modulated by height envelope to generate cauliflower billows.
+            * 2. Weather coverage thresholding.
+            * 3. High-frequency Worley detail erosion carved into perimeter boundaries.
+            */
             float SampleCloudDensityUnified(float3 p, float heightFraction, 
-                float lod, CloudWeather weather, bool applyErosion)
+                float lod, CloudWeather weather, bool applyErosion, float detailFade)
             {
-                if (weather.macro < 0.01) return 0.0;
-
                 float h = heightFraction;
                 float horizFreq = CLOUD_NOISE_FREQ * _CloudScale;
 
-                float verticalBase = h * CLOUD_VERTICAL_SCALE; 
-                float verticalOffset = sin(p.x * 0.00013) * cos(p.z * 0.00017) * 0.15;
-
-                float verticalDrift = _CloudTime * 0.0003;
+                // Wind shear: natural forward tilt
+                float shear = pow(h, 1.3) * 0.30;
+                float2 altitudeShear = float2(shear, shear * 0.5);
 
                 float2 curlOffset = float2(0, 0);
-                if (applyErosion)
+                if (applyErosion && detailFade > 0.001)
                 {
                     float2 curlUV = p.xz * CLOUD_CURL_UV_SCALE + _CloudWind * 0.05;
-                    curlOffset = tex2Dlod(_CurlNoiseTex, float4(curlUV, 0, 0)).rg 
-                                * 2.0 - 1.0;
+                    curlOffset = (tex2Dlod(_CurlNoiseTex, float4(curlUV, 0, 0)).rg * 2.0 - 1.0) * (CLOUD_CURL_STRENGTH * detailFade);
                 }
 
                 float3 noiseUVW = float3(
-                    p.x * horizFreq + _CloudWind.x + curlOffset.x * CLOUD_CURL_STRENGTH,
-                    verticalBase + verticalOffset + verticalDrift,
-                    p.z * horizFreq + _CloudWind.y + curlOffset.y * CLOUD_CURL_STRENGTH
+                    p.x * horizFreq + _CloudWind.x + altitudeShear.x + curlOffset.x,
+                    h * CLOUD_VERTICAL_SCALE,
+                    p.z * horizFreq + _CloudWind.y + altitudeShear.y + curlOffset.y
                 );
 
                 float4 noise3D = tex3Dlod(_CloudNoise3D, float4(noiseUVW, lod));
 
-                // === BASE SHAPE ===
-                float overcastBlend = saturate((weather.macro - 0.6) * 4.0);
-                float baseNoise = lerp(noise3D.r, noise3D.g * 0.6 + 0.2, overcastBlend);
+                // === 1. ISOLATED CLOUD BODIES WITH CLEAR SKY GAPS ===
+                // Threshold weather map to create distinct separated clouds
+                float covThreshold = (1.0 - _CloudCoverage) * 0.85;
+                float weatherCoverage = smoothstep(covThreshold, covThreshold + 0.35, weather.coverage);
+                if (weatherCoverage < 0.001) return 0.0;
 
-                // === HEIGHT + COVERAGE ===
+                // === 2. CUMULUS SHAPE (Subtractive Height Carving) ===
+                float baseNoise = noise3D.r;
                 float heightGrad = CloudHeightGradient(h, weather.type);
-                float effectiveCoverage = weather.macro * heightGrad;
 
-                if (effectiveCoverage < 0.01) return 0.0;
+                // Height subtractively shapes noise: tops naturally break into rounded cauliflower heads
+                float shapedNoise = baseNoise - (1.0 - heightGrad) * 0.55;
 
-                float baseShape = DensityHeightRemap(baseNoise, h, effectiveCoverage);
+                // Density threshold: creates thick solid cores and fluffy perimeter
+                float cloudThreshold = (1.0 - weatherCoverage) * 0.60;
+                float baseShape = saturate((shapedNoise - cloudThreshold) / 0.32);
 
-                if (applyErosion && baseShape > 0.001)
+                if (baseShape < 0.001) return 0.0;
+
+                // Core saturation: ensures central body is solid white, opaque, and casts deep shadows
+                baseShape = pow(baseShape, 0.75) * weatherCoverage;
+
+                // === 3. PERIMETER DETAIL EROSION ===
+                if (applyErosion && detailFade > 0.001)
                 {
-                    float erosionStrength = _CloudDetail * weather.erosion
-                                        * (1.0 - overcastBlend * 0.7);
-                    float detailNoise = dot(noise3D.gba, float3(0.5, 0.3, 0.2));
+                    float3 detailUVW = noiseUVW * 3.0;
+                    float4 detail3D  = tex3Dlod(_CloudNoise3D, float4(detailUVW, lod + 0.5));
+                    float detailFBM  = dot(detail3D.gba, float3(0.5, 0.3, 0.2));
 
-                    float topBlend = smoothstep(0.1, 0.4, h);
-                    float detailForErosion = lerp(detailNoise, 1.0 - detailNoise, topBlend);
-
-                    float edgeFactor = smoothstep(0.0, 0.3, baseShape) 
-                                    * smoothstep(0.8, 0.3, baseShape);
-
-                    float erosionHeightMask = smoothstep(0.0, 0.15, h);
-
-                    float erosion = detailForErosion * erosionStrength 
-                                * edgeFactor * erosionHeightMask;
+                    // Erode boundaries while preserving solid internal core
+                    float edgeMask = smoothstep(0.0, 0.35, baseShape) * smoothstep(0.95, 0.40, baseShape);
+                    float erosion = detailFBM * _CloudDetail * 0.32 * edgeMask * detailFade;
                     baseShape = saturate(baseShape - erosion);
-
-                    baseShape -= noise3D.a * _CloudWisp * 0.3 
-                            * (1.0 - overcastBlend * 0.8) * edgeFactor * erosionHeightMask;
-                    baseShape = max(0.0, baseShape);
                 }
 
-                return saturate(baseShape * weather.density) * _CloudDensity;
+                return baseShape * weather.density * _CloudDensity;
             }
 
             // =====================================================================
@@ -947,17 +956,22 @@ Shader "Horizon/Procedural Skybox"
                     float2 hitBottom = CloudRaySphere(camOrigin, direction, cloudBottomRad);
                     float2 hitTop    = CloudRaySphere(camOrigin, direction, cloudTopRad);
 
+                    /**
+                    * Clamps cloud ray within max visible distance [distToStart, maxDist].
+                    * Prevents ray from stepping into deep fog infinity at shallow horizon angles.
+                    */
                     if (hitTop.y > 0)
                     {
-                        float distToStart = max(0, hitBottom.y);
-                        float distToEnd   = hitTop.y;
-                        float maxDist = CLOUD_MAX_DISTANCE;
+                        float distToStart = max(0.0, hitBottom.y);
 
-                        if (distToStart <= maxDist)
+                        float horizonScale = saturate(direction.y * 3.5);
+                        float maxDist = lerp(32000.0, CLOUD_MAX_DISTANCE, horizonScale);
+
+                        float rayEnd = min(hitTop.y, maxDist);
+                        float rayLength = max(0.0, rayEnd - distToStart);
+
+                        if (distToStart < maxDist && rayLength > 10.0)
                         {
-                            float rayLength = min(distToEnd - distToStart, maxDist);
-
-                            float fineStep  = rayLength / float(CLOUD_STEPS);
                             float3 startPos = camOrigin + direction * distToStart;
 
                             bool anyCloud = false;
@@ -971,7 +985,7 @@ Shader "Horizon/Procedural Skybox"
                             [unroll]
                             for (int pre = 0; pre < 5; pre++)
                             {
-                                float3 prePos = startPos + direction * (rayLength * (float(pre) + 0.5) * 0.2);
+                                float3 prePos = startPos + direction * (rayLength * ((float)pre + 0.5) * 0.2);
                                 float2 preUV = prePos.xz * 0.000025 * _CloudScale 
                                             + (_CloudWind * 0.1) + weatherDrift;
                                 
@@ -984,13 +998,6 @@ Shader "Horizon/Procedural Skybox"
 
                             if (anyCloud)
                             {
-                                float2 ditherUV = fmod(i.vertex.xy, 64.0) / 64.0;
-                                float dither = tex2Dlod(_BlueNoiseTex, float4(ditherUV, 0, 0)).r;
-                                
-                                float linearStep = rayLength / float(CLOUD_STEPS);
-                                float ditherOffset = dither * clamp(linearStep, 100.0, 150.0);
-                                float lastT = 0.0;
-
                                 // --- Light source blending (sun ↔ moon) ---
                                 float cloudAltMeters = _CloudAltitude * 1000.0;
                                 float cloudSunsetAngle = -sqrt(2.0 * cloudAltMeters / CLOUD_PLANET_RADIUS);
@@ -1026,19 +1033,37 @@ Shader "Horizon/Procedural Skybox"
 
                                 half3 accumColor = 0;
                                 float transmittance = 1.0;
-                                
-                                float stepFraction = 1.0 / float(CLOUD_STEPS);
+
+                                /**
+                                 * Computes dynamic step count based on viewing elevation angle.
+                                 * Horizon: CLOUD_MAX_STEPS (78), Zenith: CLOUD_MIN_STEPS (36).
+                                 */
+                                float elev = saturate(direction.y);
+                                int dynamicSteps = (int)lerp((float)CLOUD_MAX_STEPS, (float)CLOUD_MIN_STEPS, sqrt(elev));
+                                float stepFraction = 1.0 / (float)dynamicSteps;
+
+                                /**
+                                * Blue noise sampling & continuous non-linear step distribution.
+                                */
+                                float2 ditherUV = i.vertex.xy / 64.0;
+                                float dither = tex2Dlod(_BlueNoiseTex, float4(ditherUV, 0, 0)).r;
+
+                                float lastT = 0.0;
 
                                 [loop]
-                                for (int j = 0; j < CLOUD_STEPS; j++)
+                                for (int j = 0; j < CLOUD_MAX_STEPS; j++)
                                 {
-                                    float normT = float(j + 1) * stepFraction;
-                                    float curveT = normT * sqrt(normT);
-                                    float targetT = curveT * rayLength;
-                                    
+                                    if (j >= dynamicSteps) break;
+
+                                    // 1. Calculate physical boundaries for current step slice
+                                    float normT_End = (float)(j + 1) * stepFraction;
+                                    float targetT   = normT_End * sqrt(normT_End) * rayLength;
                                     float currentStep = targetT - lastT;
-                                    float t = lastT + ditherOffset;
-                                    
+
+                                    // 2. Sample strictly inside the [lastT, targetT] slice using blue noise
+                                    float jitteredNormT = ((float)j + dither) * stepFraction;
+                                    float t = jitteredNormT * sqrt(jitteredNormT) * rayLength;
+
                                     if (t >= rayLength || transmittance < CLOUD_TRANSMITTANCE_MIN) break;
 
                                     float3 pos = startPos + direction * t;
@@ -1068,7 +1093,11 @@ Shader "Horizon/Procedural Skybox"
                                         continue;
                                     }
 
-                                    // --- Full density sample ---
+                                    // Smooth distance fade: 1.0 up to 12km, completely disabling expensive erosion and curl beyond 22km.
+                                    // Eliminates high-frequency aliasing and saves 2 texture lookups per step on horizon rays.
+                                    float detailFade = saturate(1.0 - (distAlongRay - 12000.0) / 10000.0);
+
+                                    // --- Full density sample with distance fade ---
                                     CloudWeather weather;
                                     weather.coverage = wData.r;
                                     weather.type     = saturate(wData.g * 1.3 - 0.1);
@@ -1076,7 +1105,7 @@ Shader "Horizon/Procedural Skybox"
                                     weather.density  = wData.a;
                                     weather.macro    = macro;
 
-                                    float dens = SampleCloudDensityUnified(pos, heightInfo, lod, weather, true);
+                                    float dens = SampleCloudDensityUnified(pos, heightInfo, lod, weather, true, detailFade);
 
                                     // --- Level 3: density zero ---
                                     if (dens < 0.001)
@@ -1102,8 +1131,9 @@ Shader "Horizon/Procedural Skybox"
 
                                         if (lightH >= 0.0 && lightH <= 1.0)
                                         {
+                                            // Light march never needs high-frequency erosion (detailFade = 0.0)
                                             float ld = SampleCloudDensityUnified(lightSamplePos, lightH, 
-                                                lod + 1.5, weather, false);
+                                                lod + 1.5, weather, false, 0.0);
                                             totalLightDens += ld;
                                             lightOpticalDepth += ld * (t1 - t0) * absorptionCoeff;
                                         }

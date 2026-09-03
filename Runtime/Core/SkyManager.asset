@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: c333ccfdd0cbdbc4ca30cef2dd6e6b9b, type: 3}
   m_Name: SkyManager
   m_EditorClassIdentifier: 
-  serializedUdonProgramAsset: {fileID: 11400000, guid: ee861da1a3ccb944e94d0c10bf60add1,
+  serializedUdonProgramAsset: {fileID: 11400000, guid: e2e6e5acdf3e8a94b9f64cfad4dc999a,
     type: 2}
   udonAssembly: 
   assemblyError: 
