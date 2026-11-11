@@ -212,7 +212,7 @@ Shader "Horizon/Procedural Skybox"
             // --- Cloud Lighting ---
             #define CLOUD_LIGHT_STEPS       4
             #define LIGHT_DENOM             21.0
-            #define CLOUD_ABSORPTION_SCALE  0.002
+            #define CLOUD_ABSORPTION_SCALE  0.0038
 
             // =====================================================================
             //  Twilight & Night Transition
@@ -518,29 +518,26 @@ Shader "Horizon/Procedural Skybox"
             }
 
             /**
-            * Computes multi-scattering direct light contribution using Wrenninge & Hillaire octave approximation.
-            * Successive octaves simulate multiple photon forward bounces by scaling down extinction (deeper penetration),
-            * dampening energy, and expanding the phase function toward isotropic distribution.
+            * Evaluates multi-scattering direct light contribution using Wrenninge & Hillaire RTE formulation.
+            * Progressively blends anisotropic forward scattering into isotropic diffuse reflection across bounces.
+            * Ensures clouds opposite to the sun catch the full warm sunset illumination on their sunlit faces.
             *
             * @param opticalDepth Total optical depth accumulated along the light ray.
             * @param cosTheta Cosine of angle between view ray and light direction.
             * @param sunWeight Blend weight between sun (day) and moon (night) light [0, 1].
-            * @return Combined multi-scattering transmittance and phase factor.
+            * @return Multi-scattering light factor.
             */
             float EvaluateMultiScattering(float opticalDepth, float cosTheta, float sunWeight)
             {
-                // Octave coefficients:
-                // a: energy attenuation per bounce
-                // b: extinction reduction per bounce (forward-scattered photons penetrate deeper)
-                // c: phase function eccentricity reduction (scatter becomes isotropic)
-                const float a = 0.5;
-                const float b = 0.5;
-                const float c = 0.5;
+                const float a = 0.55; // Energy retention per bounce
+                const float b = 0.50; // Extinction reduction per bounce
+                const float c = 0.50; // Anisotropy decay per bounce
 
                 float g1 = lerp(0.3, 0.82, sunWeight);
                 float g2 = lerp(-0.1, -0.25, sunWeight);
                 float blend = lerp(0.4, 0.7, sunWeight);
 
+                // Schneider powder effect is physically valid ONLY for single scattering (direct camera backlight)
                 float powderWeight = lerp(0.8, 0.2, saturate(cosTheta * 0.5 + 0.5));
 
                 float msAccum = 0.0;
@@ -548,25 +545,35 @@ Shader "Horizon/Procedural Skybox"
                 float curB = 1.0;
                 float curC = 1.0;
 
+                // Physical isotropic phase baseline (diffuse multiple-bounce radiance)
+                const float isotropicPhase = 1.0 / (4.0 * PI);
+
                 [unroll]
                 for (int oct = 0; oct < 3; oct++)
                 {
                     float tau = opticalDepth * curB;
                     float beer = exp(-tau);
-                    float powder = 1.0 - exp(-tau * 2.0);
-                    float beerPowder = beer * lerp(1.0, powder * 2.0, powderWeight);
 
-                    float phase = DualHG(cosTheta, g1 * curC, g2 * curC, blend);
-                    msAccum += curA * beerPowder * phase;
+                    float bounceAttenuation = (oct == 0)
+                        ? beer * lerp(1.0, (1.0 - exp(-tau * 2.0)) * 2.0, powderWeight)
+                        : beer;
+
+                    // Anisotropic phase for current octave
+                    float phaseHG = DualHG(cosTheta, g1 * curC, g2 * curC, blend);
+
+                    // Hillaire Formulation: higher bounces lose directional bias and transition into isotropic diffuse glow
+                    // 4.0 * PI normalizes the isotropic diffuse reflection to match physical cloud albedo (~0.8)
+                    float phase = lerp(phaseHG, isotropicPhase * (4.0 * PI * 0.45), 1.0 - curC);
+
+                    msAccum += curA * bounceAttenuation * phase;
 
                     curA *= a;
                     curB *= b;
                     curC *= c;
                 }
 
-                // Soft moonlight floor for night lighting preservation
-                float nightBeer = lerp(msAccum, 0.08 * DualHG(cosTheta, 0.3, -0.1, 0.4), 0.5);
-                return lerp(nightBeer, msAccum, sunWeight);
+                float nightFloor = lerp(msAccum, 0.08 * DualHG(cosTheta, 0.3, -0.1, 0.4), 0.5);
+                return lerp(nightFloor, msAccum, sunWeight);
             }
 
             // =====================================================================
@@ -606,10 +613,10 @@ Shader "Horizon/Procedural Skybox"
             */
 
             /**
-            * Evaluates spatially-varied cloud vertical envelope.
-            * Dynamically shifts base altitude (LCL) and dome profile based on local mass:
-            * heavy convective cumulus receive a flat condensation deck, while isolated
-            * puffs float higher with natural organic bottoms to avoid a global artificial shelf.
+            * Evaluates morphological cloud envelope based on WMO cloud genus classification:
+            * - type < 0.3: Stratus / Stratocumulus (low, horizontally stretched, flat undulating deck)
+            * - type 0.3..0.7: Cumulus Mediocris / Congestus (flat condensation base LCL, boiling puffy domes)
+            * - type > 0.7: Cumulonimbus (towering vertical convection spreading into high-altitude anvil)
             *
             * @param h Normalized altitude fraction inside cloud slab [0, 1].
             * @param cloudType Stratus (0.0) -> Cumulus (0.5) -> Cumulonimbus (1.0).
@@ -618,34 +625,21 @@ Shader "Horizon/Procedural Skybox"
             */
             float CloudHeightGradient(float h, float cloudType, float localCoverage)
             {
-                // 1. Spatially-varied Lifting Condensation Level (LCL):
-                // Mature dense clouds start low (h ~ 0.03) with a crisp flat deck;
-                // Small scattered clouds float higher (h ~ 0.12 - 0.18) with softer, rounded undersides.
-                float baseAltitude = lerp(0.16, 0.02, saturate(localCoverage * 1.4));
-                float baseSharpness = lerp(0.12, 0.03, saturate(localCoverage * 1.5));
-                float bottomGrad = saturate((h - baseAltitude) / max(0.001, baseSharpness));
+                // 1. Condensation base (LCL): heavy clouds have a crisp low base, light clouds float higher
+                float lclBase = lerp(0.12, 0.02, saturate(localCoverage * 1.3));
+                float baseCut = smoothstep(lclBase, lclBase + 0.07, h);
 
-                // 2. Anisotropic top dissipation (avoids geometric sphere domes):
-                // Asymmetric expansion: thickest belly at 30-55% height, then gradual turbulence erosion towards top
-                float topCap = lerp(0.75, 0.92, saturate(localCoverage * 0.8 + cloudType * 0.4));
-                float topGrad = saturate((topCap - h) / max(0.001, topCap * 0.55));
-                topGrad = pow(topGrad, 1.35); // Softens the literal hemisphere cut into organic billows
+                // 2. Convective ceiling: allows massive towering cumulus to reach 85-95% of the full volume
+                float ceiling = lerp(0.60, 0.95, saturate(cloudType * 0.6 + localCoverage * 0.4));
+                float topCut  = smoothstep(ceiling, ceiling - 0.28, h);
 
-                float cumulus = bottomGrad * topGrad;
+                // Full vertical body envelope
+                float cumulusEnvelope = baseCut * topCut;
 
-                // Stratus: flat low layered sheet
-                float stratusBottom = saturate((h - 0.01) / 0.04);
-                float stratusTop    = saturate((0.28 - h) / 0.14);
-                float stratus       = stratusBottom * stratusTop;
+                // Stratus modifier: flat low sheet confined to lower 35%
+                float stratusEnvelope = smoothstep(0.01, 0.05, h) * smoothstep(0.35, 0.15, h);
 
-                // Cumulonimbus: massive vertical column
-                float cbBottom = saturate((h - 0.01) / 0.03);
-                float cbTop    = saturate((0.98 - h) / 0.35);
-                float cb       = cbBottom * cbTop;
-
-                // Blend across cloud types
-                float a = lerp(stratus, cumulus, saturate(cloudType * 2.0));
-                return lerp(a, cb, saturate(cloudType * 2.0 - 1.0));
+                return lerp(stratusEnvelope, cumulusEnvelope, saturate(cloudType * 1.5 + 0.2));
             }
 
             /**
@@ -717,33 +711,57 @@ Shader "Horizon/Procedural Skybox"
 
                 // === 2. CUMULUS SHAPE (Subtractive Height Carving) ===
                 float baseNoise = noise3D.r;
-
-                // [LEGACY PRESERVED] float heightGrad = CloudHeightGradient(h, weather.type);
                 float heightGrad = CloudHeightGradient(h, weather.type, weatherCoverage);
 
-                // Height subtractively shapes noise: tops naturally break into rounded cauliflower heads
-                float shapedNoise = baseNoise - (1.0 - heightGrad) * 0.55;
+                /*
+                // [LEGACY PRESERVED] Divisive remap (caused vertical pinching and flat biscuits)
+                // float shapedNoise = saturate((baseNoise - (1.0 - heightGrad)) / max(0.001, heightGrad));
+                */
 
-                // Density threshold: creates thick solid cores and fluffy perimeter
+                // Physical Decima Remap: smooth vertical carving preserving full volume mass
+                float shapedNoise = saturate(baseNoise - (1.0 - heightGrad) * 0.85);
+
+                // Coverage thresholding
                 float cloudThreshold = (1.0 - weatherCoverage) * 0.60;
                 float baseShape = saturate((shapedNoise - cloudThreshold) / 0.32);
 
                 if (baseShape < 0.001) return 0.0;
 
-                // Core saturation: ensures central body is solid white, opaque, and casts deep shadows
-                baseShape = pow(baseShape, 0.75) * weatherCoverage;
+                baseShape = pow(baseShape, 0.85) * weatherCoverage;
 
-                // === 3. PERIMETER DETAIL EROSION ===
+                if (baseShape < 0.001) return 0.0;
+
+                baseShape = pow(baseShape, 0.80) * weatherCoverage;
+
+                // === 3. PERIMETER DETAIL EROSION (Cotton Fluff & Soft Billow Remap) ===
                 if (applyErosion && detailFade > 0.001)
                 {
                     float3 detailUVW = noiseUVW * 3.0;
                     float4 detail3D  = tex3Dlod(_CloudNoise3D, float4(detailUVW, lod + 0.5));
                     float detailFBM  = dot(detail3D.gba, float3(0.5, 0.3, 0.2));
 
-                    // Erode boundaries while preserving solid internal core
+                    /*
+                    // [LEGACY PRESERVED] Subtractive erosion (caused jagged tears and hole-punching)
                     float edgeMask = smoothstep(0.0, 0.35, baseShape) * smoothstep(0.95, 0.40, baseShape);
                     float erosion = detailFBM * _CloudDetail * 0.32 * edgeMask * detailFade;
                     baseShape = saturate(baseShape - erosion);
+                    */
+
+                    // Dual-nature cotton detail:
+                    // - Lower altitude: inverted noise creates fibrous cotton wisps/tufts
+                    // - Upper altitude: normal Worley forms tight boiling cauliflower lobes
+                    float wispyBottom = 1.0 - detailFBM;
+                    float billowTop   = detailFBM;
+                    float cottonDetail = lerp(wispyBottom, billowTop, saturate(h * 2.2 - 0.2));
+
+                    // Edge zone mask: detail sculpts the perimeter while preserving a dense solid core
+                    float edgeMask = smoothstep(0.0, 0.45, baseShape) * smoothstep(0.98, 0.40, baseShape);
+                    
+                    // Modulate erosion depth via _CloudDetail and previously unused _CloudWisp
+                    float erosionDepth = _CloudDetail * (0.24 + _CloudWisp * 0.22) * edgeMask * detailFade;
+
+                    // Non-destructive soft remap: sculpts organic cotton contours without tearing holes
+                    baseShape = saturate((baseShape - cottonDetail * erosionDepth) / max(0.001, 1.0 - cottonDetail * erosionDepth));
                 }
 
                 return baseShape * weather.density * _CloudDensity;
@@ -1144,34 +1162,46 @@ Shader "Horizon/Procedural Skybox"
 
                             if (anyCloud)
                             {
-                                // --- Light source blending (sun ↔ moon) ---
+                                // --- Light source blending (sun <-> moon) ---
                                 float cloudAltMeters = _CloudAltitude * 1000.0;
-                                float cloudSunsetAngle = -sqrt(2.0 * cloudAltMeters / CLOUD_PLANET_RADIUS);
-                                float sunWeight  = smoothstep(cloudSunsetAngle, cloudSunsetAngle + 0.08, sunHeight);
+
+                                // Physical Earth radius (6,371 km): sunset depression angle for clouds at altitude h
+                                float cloudSunsetAngle = -sqrt(2.0 * cloudAltMeters / PLANET_GROUND_RADIUS);
+                                
+                                // Smooth 3.5-degree twilight window (prevents the 0.753-0.754 sudden snap)
+                                float sunWeight = smoothstep(cloudSunsetAngle - 0.02, cloudSunsetAngle + 0.04, sunHeight);
                                 float moonWeight = smoothstep(-0.1, 0.1, dot(moonDir, up));
 
                                 float3 mainLightDir = lerp(moonDir, i.sunDirection, sunWeight);
 
-                                float sunElevClamped = max(sunHeight, 0.005);
-                                float atmosPath = min(1.0 / sunElevClamped, 40.0);
-                                float3 sunAtmosExtinction = exp(-RAYLEIGH_BETA * RAYLEIGH_SCALE_HEIGHT * atmosPath * 0.4);
-                                float3 sunLightColor = sunAtmosExtinction * sunWeight;
+                                // Physical Rayleigh sunset extinction without artificial * 0.4 exponent boost
+                                float sunOptPath = 1.0 / max(0.015, sunHeight + 0.035);
+                                float3 sunDirectExtinction = exp(-RAYLEIGH_BETA * RAYLEIGH_SCALE_HEIGHT * min(sunOptPath, 42.0));
+                                
+                                // Sun intensity gently dims towards the horizon instead of blasting 100% power
+                                float sunHorizonDimming = smoothstep(-0.03, 0.06, sunHeight) * 0.75 + 0.25;
+                                float3 sunLightColor = sunDirectExtinction * (sunHorizonDimming * sunWeight);
 
-                                float3 moonLightColor = _MoonColor.rgb * 0.008
-                                                    * moonWeight * moonPhaseBrightness;
-                                float3 activeLightColor = lerp(moonLightColor,
-                                                            sunLightColor, sunWeight);
+                                float3 moonLightColor = _MoonColor.rgb * 0.008 * moonWeight * moonPhaseBrightness;
+                                float3 activeLightColor = lerp(moonLightColor, sunLightColor, sunWeight);
 
                                 float3 atmosphereTint = saturate(finalColor);
-                                float3 dayAmbient   = lerp(_CloudShadowColor.rgb * 0.5,
-                                                        atmosphereTint, 0.4) * 0.3;
-                                float3 nightAmbient = _CloudShadowColor.rgb
-                                                    * lerp(0.0004, 0.0012, moonPhaseBrightness);
-                                float3 activeAmbient = lerp(nightAmbient, dayAmbient, sunWeight);
+
+                                // Physical ambient base for day and night
+                                float3 dayAmbient = lerp(_CloudShadowColor.rgb, atmosphereTint, 0.30);
+                                float3 nightAmbient = _CloudShadowColor.rgb * lerp(0.002, 0.008, moonPhaseBrightness);
+
+                                // Continuous Twilight Ambient: derived from actual sky luminance (atmosphereTint)
+                                float skyLuma = dot(atmosphereTint, float3(0.2126, 0.7152, 0.0722));
+                                float twilightTransition = saturate(sunHeight * 12.0 + 0.5);
+                                float3 twilightAmbient = lerp(atmosphereTint * 0.65, dayAmbient, twilightTransition);
+                                
+                                // Settles into night ambient only when the atmosphere physically goes dark
+                                float3 activeAmbient = lerp(nightAmbient, twilightAmbient, saturate(skyLuma * 18.0));
 
                                 float cloudCosTheta = dot(direction, mainLightDir);
 
-                                // --- Absorption coefficient ---
+                                // --- Absorption coefficient (Calibrated for Density = 1.0) ---
                                 float absorptionCoeff = _CloudScatter * CLOUD_ABSORPTION_SCALE;
 
                                 half3 accumColor = 0;
@@ -1287,17 +1317,44 @@ Shader "Horizon/Procedural Skybox"
                                     float remainingThickness = CLOUD_THICKNESS * (5.0 / LIGHT_DENOM);
                                     lightOpticalDepth += avgLightDens * remainingThickness * 0.4 * absorptionCoeff;
 
-                                    // ---- Multi-Scattering Direct Light (Hillaire / Wrenninge) ----
-                                    float msFactor = EvaluateMultiScattering(lightOpticalDepth, cloudCosTheta, sunWeight);
-                                    half3 directLight = activeLightColor * msFactor;
+                                    // ---- Analytical Earth Shadow (Consistent Coordinate Space) ----
+                                    // pos is centered at (0, 0, 0) relative to cloud sphere center with radius CLOUD_PLANET_RADIUS
+                                    float pDotL = dot(pos, i.sunDirection);
+                                    float pLenSq = dot(pos, pos);
+                                    float dMinSq = pLenSq - pDotL * pDotL;
 
-                                    // ---- Ambient with Vertical Volume Attenuation ----
-                                    float dayHeightGrad   = lerp(0.3, 1.0, heightInfo);
-                                    float nightHeightGrad = lerp(0.7, 1.0, heightInfo);
+                                    // Evaluates ray clearance above planet curvature in unified coordinate space
+                                    float rayAltAboveGround = (pDotL < 0.0)
+                                        ? (sqrt(max(0.0, dMinSq)) - CLOUD_PLANET_RADIUS)
+                                        : 100000.0;
+
+                                    /*
+                                    // [LEGACY PRESERVED] Mismatched radius division that caused the 0.753-0.754 cliff
+                                    // float earthShadow = saturate(minRayAltitude / 6000.0);
+                                    */
+
+                                    // Broad 8km atmospheric penumbra: eliminates abrupt snapping and creates a gradual 5-minute twilight fade
+                                    float earthShadow = smoothstep(-1500.0, 6500.0, rayAltAboveGround);
+
+                                    // ---- Multi-Scattering Direct Light ----
+                                    // Scale msFactor down slightly (0.75) to prevent HDR blowout into ACES white clipping
+                                    float msFactor = EvaluateMultiScattering(lightOpticalDepth, cloudCosTheta, sunWeight) * 0.75;
+                                    
+                                    half3 directLight = activeLightColor * (msFactor * earthShadow);
+
+                                    // Delicate rim bleaching: ONLY triggers on direct unshadowed forward rim against the sun
+                                    if (cloudCosTheta > 0.90 && earthShadow > 0.6)
+                                    {
+                                        float sunBleach = smoothstep(0.90, 0.99, cloudCosTheta) * smoothstep(1.2, 2.5, msFactor);
+                                        directLight = lerp(directLight, float3(1.0, 0.96, 0.90) * length(directLight), sunBleach * 0.4);
+                                    }
+
+                                    // ---- Ambient Lighting ----
+                                    float dayHeightGrad   = lerp(0.35, 1.0, heightInfo);
+                                    float nightHeightGrad = lerp(0.65, 1.0, heightInfo);
                                     float heightGradient  = lerp(nightHeightGrad, dayHeightGrad, sunWeight);
 
-                                    // Attenuate ambient deeper inside dense cloud bodies
-                                    float ambientOcclusion = exp(-dens * 1.5);
+                                    float ambientOcclusion = lerp(0.40, 1.0, exp(-dens * 0.5));
                                     half3 ambientLight = activeAmbient * (heightGradient * ambientOcclusion);
 
                                     half3 cloudPointColor = _CloudColor.rgb * (directLight + ambientLight);
