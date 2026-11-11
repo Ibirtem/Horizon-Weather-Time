@@ -585,11 +585,9 @@ Shader "Horizon/Procedural Skybox"
             //  CLOUD HEIGHT GRADIENT
             // =====================================================================
 
-            /**
-            * Height gradient profile based on Andrew Schneider (SIGGRAPH 2015).
-            * Continuous upward tapering forces 3D noise peaks to form billowing cauliflower domes.
-            */
-            float CloudHeightGradient(float h, float cloudType)
+            /*
+            // [LEGACY PRESERVED] Original 2015 Schneider Height Gradient - Kept for reference & instant rollback
+            float CloudHeightGradient_Legacy(float h, float cloudType)
             {
                 // Cumulus: solid body up to 50% height, then gradual dome dissipation up to 0.88
                 float bottomGrad = saturate(Remap(h, 0.0, 0.10, 0.0, 1.0));
@@ -604,6 +602,71 @@ Shader "Horizon/Procedural Skybox"
 
                 float a = lerp(stratus, cumulus, saturate(cloudType * 2.0));
                 return lerp(a, cb, saturate(cloudType * 2.0 - 1.0));
+            }
+            */
+
+            /**
+            * Evaluates spatially-varied cloud vertical envelope.
+            * Dynamically shifts base altitude (LCL) and dome profile based on local mass:
+            * heavy convective cumulus receive a flat condensation deck, while isolated
+            * puffs float higher with natural organic bottoms to avoid a global artificial shelf.
+            *
+            * @param h Normalized altitude fraction inside cloud slab [0, 1].
+            * @param cloudType Stratus (0.0) -> Cumulus (0.5) -> Cumulonimbus (1.0).
+            * @param localCoverage Local weather coverage at current world coordinate [0, 1].
+            * @return Height attenuation mask [0, 1].
+            */
+            float CloudHeightGradient(float h, float cloudType, float localCoverage)
+            {
+                // 1. Spatially-varied Lifting Condensation Level (LCL):
+                // Mature dense clouds start low (h ~ 0.03) with a crisp flat deck;
+                // Small scattered clouds float higher (h ~ 0.12 - 0.18) with softer, rounded undersides.
+                float baseAltitude = lerp(0.16, 0.02, saturate(localCoverage * 1.4));
+                float baseSharpness = lerp(0.12, 0.03, saturate(localCoverage * 1.5));
+                float bottomGrad = saturate((h - baseAltitude) / max(0.001, baseSharpness));
+
+                // 2. Anisotropic top dissipation (avoids geometric sphere domes):
+                // Asymmetric expansion: thickest belly at 30-55% height, then gradual turbulence erosion towards top
+                float topCap = lerp(0.75, 0.92, saturate(localCoverage * 0.8 + cloudType * 0.4));
+                float topGrad = saturate((topCap - h) / max(0.001, topCap * 0.55));
+                topGrad = pow(topGrad, 1.35); // Softens the literal hemisphere cut into organic billows
+
+                float cumulus = bottomGrad * topGrad;
+
+                // Stratus: flat low layered sheet
+                float stratusBottom = saturate((h - 0.01) / 0.04);
+                float stratusTop    = saturate((0.28 - h) / 0.14);
+                float stratus       = stratusBottom * stratusTop;
+
+                // Cumulonimbus: massive vertical column
+                float cbBottom = saturate((h - 0.01) / 0.03);
+                float cbTop    = saturate((0.98 - h) / 0.35);
+                float cb       = cbBottom * cbTop;
+
+                // Blend across cloud types
+                float a = lerp(stratus, cumulus, saturate(cloudType * 2.0));
+                return lerp(a, cb, saturate(cloudType * 2.0 - 1.0));
+            }
+
+            /**
+            * Evaluates 22-degree optical refraction halo caused by hexagonal ice column crystals in cirrus veil.
+            *
+            * @param viewDir Normalized camera view direction.
+            * @param sunDir Normalized sun light direction.
+            * @param cirrusDensity Evaluated cirrus optical density at this pixel.
+            * @return Additive halo radiance intensity.
+            */
+            float EvaluateCirrusIceHalo(float3 viewDir, float3 sunDir, float cirrusDensity)
+            {
+                float cosTheta = dot(viewDir, sunDir);
+                float angleDeg = acos(clamp(cosTheta, -1.0, 1.0)) * (180.0 / PI);
+
+                // Sharp 22-degree refraction circular peak (hexagonal crystal prism minimum deviation angle)
+                float haloPeak = exp(-pow((angleDeg - 22.0) / 1.6, 2.0));
+
+                // Halo only forms in semi-transparent thin ice sheets; washed out in thick overcast or clear sky
+                float veilMask = smoothstep(0.04, 0.35, cirrusDensity) * (1.0 - smoothstep(0.45, 0.85, cirrusDensity));
+                return haloPeak * veilMask * 0.4;
             }
 
             // =====================================================================
@@ -654,7 +717,9 @@ Shader "Horizon/Procedural Skybox"
 
                 // === 2. CUMULUS SHAPE (Subtractive Height Carving) ===
                 float baseNoise = noise3D.r;
-                float heightGrad = CloudHeightGradient(h, weather.type);
+
+                // [LEGACY PRESERVED] float heightGrad = CloudHeightGradient(h, weather.type);
+                float heightGrad = CloudHeightGradient(h, weather.type, weatherCoverage);
 
                 // Height subtractively shapes noise: tops naturally break into rounded cauliflower heads
                 float shapedNoise = baseNoise - (1.0 - heightGrad) * 0.55;
@@ -933,11 +998,25 @@ Shader "Horizon/Procedural Skybox"
                     float projHeight = direction.y;
                     float2 cirrusBaseUV = direction.xz / max(projHeight, 0.05) * _CirrusScale * 0.12;
 
+                    /*
+                    // [LEGACY PRESERVED] Static linear Cirrus UV sampling
                     float2 uv1 = cirrusBaseUV + _CirrusWind;
                     float2 uv2 = cirrusBaseUV * 3.1 + _CirrusWind * 1.7 + direction.xz * 0.015;
                     float2 uv3 = cirrusBaseUV * 7.3 + _CirrusWind * 0.4 - direction.xz * 0.008;
+                    */
 
+                    // Base macro layer
+                    float2 uv1 = cirrusBaseUV + _CirrusWind;
                     float4 layer1 = tex2Dlod(_CirrusTex, float4(uv1, 0, 0));
+
+                    // Wind-shear fallstreaks (Mares' tails):
+                    // Lower falling ice crystal streams get dragged along wind shear vector
+                    float2 windDir = normalize(_CirrusWind + float2(1e-4, 1e-4));
+                    float2 fallstreakDrift = windDir * (1.0 - layer1.r) * 0.09;
+
+                    float2 uv2 = (cirrusBaseUV + fallstreakDrift) * 3.1 + _CirrusWind * 1.7 + direction.xz * 0.015;
+                    float2 uv3 = (cirrusBaseUV + fallstreakDrift * 1.7) * 7.3 + _CirrusWind * 0.4 - direction.xz * 0.008;
+
                     float4 layer2 = tex2Dlod(_CirrusTex, float4(uv2, 0, 0));
                     float4 layer3 = tex2Dlod(_CirrusTex, float4(uv3, 0, 0));
 
@@ -949,9 +1028,7 @@ Shader "Horizon/Procedural Skybox"
 
                     // --- Shape: patches × fibers × micro-detail ---
                     float maskShape = smoothstep(0.15, 0.55, layer1.r);
-                    
                     float midFibers = layer2.g * 0.7 + 0.3;
-                    
                     float microDetail = layer3.r * 0.4 + layer3.g * 0.3 + 0.3;
 
                     float rawShape = maskShape * midFibers * microDetail;
@@ -989,6 +1066,10 @@ Shader "Horizon/Procedural Skybox"
 
                         cirrusBrightColor += finalColor * fwdScatter * opacity;
                         cirrusBrightColor *= lerp(1.0, 0.5, selfShadow * cirrusSunVis);
+
+                        // 22-degree ice crystal optical halo additive contribution
+                        float iceHalo = EvaluateCirrusIceHalo(direction, i.sunDirection, density) * cirrusSunVis;
+                        cirrusBrightColor += float3(1.0, 0.96, 0.88) * iceHalo;
 
                         float extinctionPath = max(pathLength - 1.0, 0.0) * 0.06;
                         float3 extinction = exp(-RAYLEIGH_BETA * RAYLEIGH_SCALE_HEIGHT * extinctionPath);
