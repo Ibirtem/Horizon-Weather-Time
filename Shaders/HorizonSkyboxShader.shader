@@ -494,14 +494,79 @@ Shader "Horizon/Procedural Skybox"
             }
 
             // =====================================================================
-            //  CLOUDS: Dual Henyey-Greenstein Phase (silver lining effect)
+            //  CLOUDS: Dual Henyey-Greenstein & Multi-Scattering (Wrenninge/Hillaire)
             // =====================================================================
 
-            float DualHG(float costheta, float g1, float g2, float blend)
+            /**
+            * Evaluates dual-lobe Henyey-Greenstein phase function with zero-division guard.
+            *
+            * @param cosTheta Angle cosine between ray direction and light direction [-1, 1].
+            * @param g1 Forward scattering asymmetry parameter [-1, 1].
+            * @param g2 Backward scattering asymmetry parameter [-1, 1].
+            * @param blend Blend weight between forward (p1) and backward (p2) lobes [0, 1].
+            * @return Normalized phase function intensity.
+            */
+            float DualHG(float cosTheta, float g1, float g2, float blend)
             {
-                float p1 = (1.0 - g1*g1) / (4.0*PI * pow(1.0 + g1*g1 - 2.0*g1*costheta, 1.5));
-                float p2 = (1.0 - g2*g2) / (4.0*PI * pow(1.0 + g2*g2 - 2.0*g2*costheta, 1.5));
+                float g1Sq = g1 * g1;
+                float g2Sq = g2 * g2;
+                float denom1 = max(1e-5, 1.0 + g1Sq - 2.0 * g1 * cosTheta);
+                float denom2 = max(1e-5, 1.0 + g2Sq - 2.0 * g2 * cosTheta);
+                float p1 = (1.0 - g1Sq) / (4.0 * PI * pow(denom1, 1.5));
+                float p2 = (1.0 - g2Sq) / (4.0 * PI * pow(denom2, 1.5));
                 return lerp(p1, p2, blend);
+            }
+
+            /**
+            * Computes multi-scattering direct light contribution using Wrenninge & Hillaire octave approximation.
+            * Successive octaves simulate multiple photon forward bounces by scaling down extinction (deeper penetration),
+            * dampening energy, and expanding the phase function toward isotropic distribution.
+            *
+            * @param opticalDepth Total optical depth accumulated along the light ray.
+            * @param cosTheta Cosine of angle between view ray and light direction.
+            * @param sunWeight Blend weight between sun (day) and moon (night) light [0, 1].
+            * @return Combined multi-scattering transmittance and phase factor.
+            */
+            float EvaluateMultiScattering(float opticalDepth, float cosTheta, float sunWeight)
+            {
+                // Octave coefficients:
+                // a: energy attenuation per bounce
+                // b: extinction reduction per bounce (forward-scattered photons penetrate deeper)
+                // c: phase function eccentricity reduction (scatter becomes isotropic)
+                const float a = 0.5;
+                const float b = 0.5;
+                const float c = 0.5;
+
+                float g1 = lerp(0.3, 0.82, sunWeight);
+                float g2 = lerp(-0.1, -0.25, sunWeight);
+                float blend = lerp(0.4, 0.7, sunWeight);
+
+                float powderWeight = lerp(0.8, 0.2, saturate(cosTheta * 0.5 + 0.5));
+
+                float msAccum = 0.0;
+                float curA = 1.0;
+                float curB = 1.0;
+                float curC = 1.0;
+
+                [unroll]
+                for (int oct = 0; oct < 3; oct++)
+                {
+                    float tau = opticalDepth * curB;
+                    float beer = exp(-tau);
+                    float powder = 1.0 - exp(-tau * 2.0);
+                    float beerPowder = beer * lerp(1.0, powder * 2.0, powderWeight);
+
+                    float phase = DualHG(cosTheta, g1 * curC, g2 * curC, blend);
+                    msAccum += curA * beerPowder * phase;
+
+                    curA *= a;
+                    curB *= b;
+                    curC *= c;
+                }
+
+                // Soft moonlight floor for night lighting preservation
+                float nightBeer = lerp(msAccum, 0.08 * DualHG(cosTheta, 0.3, -0.1, 0.4), 0.5);
+                return lerp(nightBeer, msAccum, sunWeight);
             }
 
             // =====================================================================
@@ -1024,9 +1089,6 @@ Shader "Horizon/Procedural Skybox"
                                 float3 activeAmbient = lerp(nightAmbient, dayAmbient, sunWeight);
 
                                 float cloudCosTheta = dot(direction, mainLightDir);
-                                float dayPhase   = DualHG(cloudCosTheta, 0.85, -0.3, 0.7);
-                                float nightPhase = DualHG(cloudCosTheta, 0.3,  -0.1, 0.4);
-                                float phaseVal   = lerp(nightPhase, dayPhase, sunWeight);
 
                                 // --- Absorption coefficient ---
                                 float absorptionCoeff = _CloudScatter * CLOUD_ABSORPTION_SCALE;
@@ -1144,21 +1206,19 @@ Shader "Horizon/Procedural Skybox"
                                     float remainingThickness = CLOUD_THICKNESS * (5.0 / LIGHT_DENOM);
                                     lightOpticalDepth += avgLightDens * remainingThickness * 0.4 * absorptionCoeff;
 
-                                    // ---- Beer-Lambert ----
-                                    float beerTerm = exp(-lightOpticalDepth);
-                                    float powderTerm = 1.0 - exp(-lightOpticalDepth * 2.0);
-                                    float powderWeight = lerp(0.8, 0.2, saturate(cloudCosTheta * 0.5 + 0.5));
-                                    float beerPowder = beerTerm * lerp(1.0, powderTerm * 2.0, powderWeight);
-                                    float nightBeer = lerp(beerPowder, 0.1, 0.5);
-                                    beerPowder = lerp(nightBeer, beerPowder, sunWeight);
+                                    // ---- Multi-Scattering Direct Light (Hillaire / Wrenninge) ----
+                                    float msFactor = EvaluateMultiScattering(lightOpticalDepth, cloudCosTheta, sunWeight);
+                                    half3 directLight = activeLightColor * msFactor;
 
-                                    // ---- Ambient from height ----
+                                    // ---- Ambient with Vertical Volume Attenuation ----
                                     float dayHeightGrad   = lerp(0.3, 1.0, heightInfo);
                                     float nightHeightGrad = lerp(0.7, 1.0, heightInfo);
                                     float heightGradient  = lerp(nightHeightGrad, dayHeightGrad, sunWeight);
 
-                                    half3 directLight  = activeLightColor * beerPowder * phaseVal;
-                                    half3 ambientLight = activeAmbient * heightGradient;
+                                    // Attenuate ambient deeper inside dense cloud bodies
+                                    float ambientOcclusion = exp(-dens * 1.5);
+                                    half3 ambientLight = activeAmbient * (heightGradient * ambientOcclusion);
+
                                     half3 cloudPointColor = _CloudColor.rgb * (directLight + ambientLight);
 
                                     // ---- View ray extinction ----
