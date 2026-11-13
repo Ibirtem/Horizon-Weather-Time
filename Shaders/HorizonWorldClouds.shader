@@ -129,8 +129,8 @@ Shader "Horizon/World Clouds"
             #define CLOUD_NOISE_FREQ        0.0003
             #define CLOUD_WEATHER_FREQ      0.00004
             #define CLOUD_VERTICAL_SCALE    2.0
-            #define CLOUD_CURL_UV_SCALE     0.0004
-            #define CLOUD_CURL_STRENGTH     0.08
+            #define CLOUD_CURL_UV_SCALE     0.00035
+            #define CLOUD_CURL_STRENGTH     0.07
 
             #define CLOUD_MAX_STEPS         80
             #define CLOUD_MIN_STEPS         36
@@ -322,15 +322,32 @@ Shader "Horizon/World Clouds"
 
             struct CloudWeather { float coverage; float type; float erosion; float density; float macro; };
 
-            float CloudHeightGradient(float h, float cloudType, float localCoverage)
+            static const float4 STRATUS_GRADIENT      = float4(0.05, 0.10, 0.25, 0.30);
+            static const float4 STRATOCUMULUS_GRADIENT = float4(0.02, 0.15, 0.45, 0.60);
+            static const float4 CUMULUS_GRADIENT      = float4(0.01, 0.08, 0.75, 0.98);
+
+            float4 MixCloudGradients(float cloudType)
             {
-                float lclBase = lerp(0.12, 0.02, saturate(localCoverage * 1.3));
-                float baseCut = smoothstep(lclBase, lclBase + 0.07, h);
-                float ceiling = lerp(0.60, 0.95, saturate(cloudType * 0.6 + localCoverage * 0.4));
-                float topCut  = smoothstep(ceiling, ceiling - 0.28, h);
-                float cumulusEnvelope = baseCut * topCut;
-                float stratusEnvelope = smoothstep(0.01, 0.05, h) * smoothstep(0.35, 0.15, h);
-                return lerp(stratusEnvelope, cumulusEnvelope, saturate(cloudType * 1.5 + 0.2));
+                float w_stratus = 1.0 - saturate(cloudType * 2.0);
+                float w_stratocumulus = 1.0 - abs(cloudType - 0.5) * 2.0;
+                float w_cumulus = saturate((cloudType - 0.5) * 2.0);
+                
+                float totalWeight = w_stratus + w_stratocumulus + w_cumulus;
+                if (totalWeight < 0.001) return CUMULUS_GRADIENT;
+                
+                w_stratus /= totalWeight;
+                w_stratocumulus /= totalWeight;
+                w_cumulus /= totalWeight;
+
+                return STRATUS_GRADIENT * w_stratus +
+                    STRATOCUMULUS_GRADIENT * w_stratocumulus +
+                    CUMULUS_GRADIENT * w_cumulus;
+            }
+
+            float CloudHeightDensityProfile(float heightFrac, float cloudType)
+            {
+                float4 grad = MixCloudGradients(cloudType);
+                return smoothstep(grad.x, grad.y, heightFrac) - smoothstep(grad.z, grad.w, heightFrac);
             }
 
             float SampleCloudDensityUnified(float3 p, float heightFraction, float lod, CloudWeather weather, bool applyErosion, float detailFade)
@@ -347,22 +364,31 @@ Shader "Horizon/World Clouds"
                     curlOffset = (tex2Dlod(_CurlNoiseTex, float4(curlUV, 0, 0)).rg * 2.0 - 1.0) * (CLOUD_CURL_STRENGTH * detailFade);
                 }
 
-                float3 noiseUVW = float3(p.x * horizFreq + _CloudWind.x + altitudeShear.x + curlOffset.x, h * CLOUD_VERTICAL_SCALE, p.z * horizFreq + _CloudWind.y + altitudeShear.y + curlOffset.y);
+                float3 noiseUVW = float3(
+                    p.x * horizFreq + _CloudWind.x + altitudeShear.x + curlOffset.x,
+                    h * CLOUD_VERTICAL_SCALE,
+                    p.z * horizFreq + _CloudWind.y + altitudeShear.y + curlOffset.y
+                );
+
                 float4 noise3D = tex3Dlod(_CloudNoise3D, float4(noiseUVW, lod));
 
                 float covThreshold = (1.0 - _CloudCoverage) * 0.85;
                 float weatherCoverage = smoothstep(covThreshold, covThreshold + 0.35, weather.coverage);
                 if (weatherCoverage < 0.001) return 0.0;
 
-                float baseNoise = noise3D.r;
+                float heightProfile = CloudHeightDensityProfile(h, weather.type);
+                if (heightProfile < 0.001) return 0.0;
 
-                float heightGrad = CloudHeightGradient(h, weather.type, weatherCoverage);
-                float shapedNoise = saturate(baseNoise - (1.0 - heightGrad) * 0.85);
+                float baseNoise = noise3D.r;
                 
-                float cloudThreshold = (1.0 - weatherCoverage) * 0.60;
+                float shapedNoise = saturate(baseNoise - (1.0 - heightProfile) * 0.85);
+
+                float localDensity = lerp(0.7, 1.3, weather.density);
+                float cloudThreshold = (1.0 - weatherCoverage * localDensity) * 0.60;
                 float baseShape = saturate((shapedNoise - cloudThreshold) / 0.32);
 
                 if (baseShape < 0.001) return 0.0;
+                
                 baseShape = pow(baseShape, 0.85) * weatherCoverage;
                 if (baseShape < 0.001) return 0.0;
                 baseShape = pow(baseShape, 0.80) * weatherCoverage;
@@ -372,13 +398,15 @@ Shader "Horizon/World Clouds"
                     float3 detailUVW = noiseUVW * 3.0;
                     float4 detail3D  = tex3Dlod(_CloudNoise3D, float4(detailUVW, lod + 0.5));
                     float detailFBM  = dot(detail3D.gba, float3(0.5, 0.3, 0.2));
-                    float wispyBottom = 1.0 - detailFBM;
-                    float billowTop   = detailFBM;
-                    float cottonDetail = lerp(wispyBottom, billowTop, saturate(h * 2.2 - 0.2));
+
+                    float erosionStrength = weather.erosion; 
+
                     float edgeMask = smoothstep(0.0, 0.45, baseShape) * smoothstep(0.98, 0.40, baseShape);
-                    float erosionDepth = _CloudDetail * (0.24 + _CloudWisp * 0.22) * edgeMask * detailFade;
-                    baseShape = saturate((baseShape - cottonDetail * erosionDepth) / max(0.001, 1.0 - cottonDetail * erosionDepth));
+                    float erosionDepth = _CloudDetail * (0.24 + _CloudWisp * 0.22) * edgeMask * erosionStrength * detailFade;
+
+                    baseShape = saturate((baseShape - (1.0 - detailFBM) * erosionDepth) / max(0.001, 1.0 - (1.0 - detailFBM) * erosionDepth));
                 }
+
                 return baseShape * weather.density * _CloudDensity;
             }
 
@@ -551,8 +579,11 @@ Shader "Horizon/World Clouds"
                     float detailFade = saturate(1.0 - (distAlongRay - 12000.0) / 10000.0);
 
                     CloudWeather weather;
-                    weather.coverage = wData.r; weather.type = saturate(wData.g * 1.3 - 0.1);
-                    weather.erosion = wData.b; weather.density = wData.a; weather.macro = macro;
+                    weather.coverage = wData.r; 
+                    weather.type = saturate(wData.g * 1.3 - 0.1);
+                    weather.erosion = wData.b; 
+                    weather.density = wData.a; 
+                    weather.macro = macro;
 
                     float dens = SampleCloudDensityUnified(pos, heightInfo, lod, weather, true, detailFade);
                     if (dens < 0.001) { lastT = targetT; continue; }
