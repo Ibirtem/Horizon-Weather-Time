@@ -24,6 +24,14 @@ Shader "Horizon/World Clouds"
         _MieDirectionalG ("Mie Directional G", Float) = 0.76
         [NoScaleOffset] _TransmittanceLUT ("Transmittance LUT", 2D) = "white" {}
 
+        _CloudCurlStrength ("Curl Strength", Range(0.0, 0.25)) = 0.07
+        _CloudSilverLining ("Silver Lining", Range(0.0, 2.5)) = 1.0
+        _CloudMultiScatter ("Multi-Scattering", Range(0.0, 1.5)) = 1.0
+        _CloudAmbientIntensity ("Ambient Intensity", Range(0.0, 2.0)) = 1.0
+
+        [HideInInspector] _HorizonFogColor ("Fog Color", Color) = (0.5, 0.5, 0.5, 1)
+        [HideInInspector] _HorizonFogBlend ("Fog Blend", Range(0.0, 1.0)) = 0.0
+
         [Header(Textures)]
         [NoScaleOffset] _CloudNoise3D ("Cloud Noise 3D (RGBA)", 3D) = "black" {}
         [NoScaleOffset] _WeatherMapTex ("Weather Map (RGBA)", 2D) = "black" {}
@@ -93,6 +101,13 @@ Shader "Horizon/World Clouds"
             float  _Exposure;
             float2 _CloudWind;
             float  _CloudTime;
+
+            float  _CloudCurlStrength;
+            float  _CloudSilverLining;
+            float  _CloudMultiScatter;
+            float  _CloudAmbientIntensity;
+            float4 _HorizonFogColor;
+            float  _HorizonFogBlend;
 
             sampler2D _TransmittanceLUT;
             float _Rayleigh;
@@ -295,28 +310,49 @@ Shader "Horizon/World Clouds"
                 return lerp(p1, p2, blend);
             }
 
-            float EvaluateMultiScattering(float opticalDepth, float cosTheta, float sunWeight)
+            /**
+             * Evaluates 3-octave Wrenninge multi-scattering using a forward-dominant Dual Henyey-Greenstein phase.
+             * Ensures strong solar silver-lining while conserving deep multi-scattered cloud brightness.
+             */
+            float EvaluateMultiScattering(float opticalDepth, float cosTheta, float sunWeight, float silverLining, float multiScatter)
             {
-                const float a = 0.55; const float b = 0.50; const float c = 0.50;
-                float g1 = lerp(0.3, 0.82, sunWeight);
-                float g2 = lerp(-0.1, -0.25, sunWeight);
-                float blend = lerp(0.4, 0.7, sunWeight);
-                float powderWeight = lerp(0.8, 0.2, saturate(cosTheta * 0.5 + 0.5));
-                float msAccum = 0.0; float curA = 1.0; float curB = 1.0; float curC = 1.0;
-                const float isotropicPhase = 1.0 / (4.0 * PI);
+                const float a = 0.50 * saturate(multiScatter * 0.85 + 0.15);
+                const float b = 0.50;
+                const float c = 0.50;
+
+                float gFront = lerp(0.35, 0.82, sunWeight);
+                float gBack  = lerp(-0.10, -0.30, sunWeight);
+                // 78% forward silver-lining lobe, 22% backward detail lobe
+                float backWeight = lerp(0.35, 0.22, sunWeight);
+
+                // Softened powder term: adds internal crease contrast without darkening thin wispy edges
+                float powder = lerp(1.0, saturate(0.45 + 0.55 * (1.0 - exp(-opticalDepth * 2.0)) * 1.6), sunWeight * 0.55);
+
+                float msAccum = 0.0;
+                float curA = 1.0;
+                float curB = 1.0;
+                float curC = 1.0;
 
                 [unroll]
                 for (int oct = 0; oct < 3; oct++)
                 {
                     float tau = opticalDepth * curB;
                     float beer = exp(-tau);
-                    float bounceAttenuation = (oct == 0) ? beer * lerp(1.0, (1.0 - exp(-tau * 2.0)) * 2.0, powderWeight) : beer;
-                    float phaseHG = DualHG(cosTheta, g1 * curC, g2 * curC, blend);
-                    float phase = lerp(phaseHG, isotropicPhase * (4.0 * PI * 0.45), 1.0 - curC);
-                    msAccum += curA * bounceAttenuation * phase;
-                    curA *= a; curB *= b; curC *= c;
+                    float atten = (oct == 0) ? (beer * powder) : beer;
+
+                    float phaseDual = DualHG(cosTheta, gFront * curC, gBack * curC, backWeight);
+                    float phase = (oct == 0)
+                        ? (phaseDual * lerp(1.0, silverLining, saturate(cosTheta * 0.5 + 0.5)))
+                        : phaseDual;
+
+                    msAccum += curA * atten * phase;
+
+                    curA *= a;
+                    curB *= b;
+                    curC *= c;
                 }
-                float nightFloor = lerp(msAccum, 0.08 * DualHG(cosTheta, 0.3, -0.1, 0.4), 0.5);
+
+                float nightFloor = lerp(msAccum, 0.08 * DualHG(cosTheta, 0.3, -0.1, 0.35), 0.5);
                 return lerp(nightFloor, msAccum, sunWeight);
             }
 
@@ -361,7 +397,7 @@ Shader "Horizon/World Clouds"
                 if (applyErosion && detailFade > 0.001)
                 {
                     float2 curlUV = p.xz * CLOUD_CURL_UV_SCALE + _CloudWind * 0.05;
-                    curlOffset = (tex2Dlod(_CurlNoiseTex, float4(curlUV, 0, 0)).rg * 2.0 - 1.0) * (CLOUD_CURL_STRENGTH * detailFade);
+                    curlOffset = (tex2Dlod(_CurlNoiseTex, float4(curlUV, 0, 0)).rg * 2.0 - 1.0) * (_CloudCurlStrength * detailFade);
                 }
 
                 float3 noiseUVW = float3(
@@ -388,9 +424,6 @@ Shader "Horizon/World Clouds"
                 float baseShape = saturate((shapedNoise - cloudThreshold) / 0.32);
 
                 if (baseShape < 0.001) return 0.0;
-                
-                baseShape = pow(baseShape, 0.85) * weatherCoverage;
-                if (baseShape < 0.001) return 0.0;
                 baseShape = pow(baseShape, 0.80) * weatherCoverage;
 
                 if (applyErosion && detailFade > 0.001)
@@ -410,6 +443,10 @@ Shader "Horizon/World Clouds"
                 return baseShape * weather.density * _CloudDensity;
             }
 
+            /**
+             * Centers the proxy hull around the currently rendering camera in world space
+             * so Scene View, Game View, VR eyes, and Mirrors all stay inside the volume.
+             */
             v2f vert(appdata v)
             {
                 v2f o;
@@ -417,8 +454,10 @@ Shader "Horizon/World Clouds"
                 UNITY_INITIALIZE_OUTPUT(v2f, o);
                 UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(o);
                 UNITY_TRANSFER_INSTANCE_ID(v, o);
-                o.pos = UnityObjectToClipPos(v.vertex);
-                o.worldPos = mul(unity_ObjectToWorld, v.vertex).xyz;
+
+                float3 worldPos = _WorldSpaceCameraPos.xyz + v.vertex.xyz * 10.0;
+                o.pos = UnityWorldToClipPos(worldPos);
+                o.worldPos = worldPos;
                 o.screenPos = ComputeScreenPos(o.pos);
                 return o;
             }
@@ -524,14 +563,20 @@ Shader "Horizon/World Clouds"
                 float3 activeLightColor = lerp(moonLightColor, sunLightColor, sunWeight);
 
                 float4 atmosResult = ComputeAtmosphere(rayDir, sunDir, _Turbidity, _Rayleigh, _MieCoefficient, _MieDirectionalG);
-                float3 atmosphereTint = saturate(atmosResult.rgb);
 
-                float3 dayAmbient = lerp(_CloudShadowColor.rgb, atmosphereTint, 0.30);
-                float3 nightAmbient = _CloudShadowColor.rgb * lerp(0.002, 0.008, moonPhaseBrightness);
+                // Extract a clean sky-blue ambient reference (prevents sun-glare spikes from tinting shadows yellow)
+                float3 skyOptical = SampleOpticalDepthLUT(4000.0, max(0.15, sunDir.y));
+                float3 skyZenithTint = exp(-(RAYLEIGH_BETA * _Rayleigh * skyOptical.x + OZONE_BETA * skyOptical.z));
+                float3 atmosphereAmbient = lerp(min(atmosResult.rgb, 0.08), skyZenithTint * saturate(sunHeight * 2.0 + 0.2) * 0.06, 0.65);
 
-                float skyLuma = dot(atmosphereTint, float3(0.2126, 0.7152, 0.0722));
+                // Normalize _CloudShadowColor into pre-exposure space so it balances cleanly against physical atmosphere
+                float exposureInv = 1.0 / max(_Exposure, 1.0);
+                float3 dayAmbient = (atmosphereAmbient * 0.50 + _CloudShadowColor.rgb * exposureInv * 0.55) * _CloudAmbientIntensity;
+                float3 nightAmbient = _CloudShadowColor.rgb * exposureInv * lerp(0.03, 0.12, moonPhaseBrightness) * _CloudAmbientIntensity;
+
+                float skyLuma = dot(saturate(atmosResult.rgb), float3(0.2126, 0.7152, 0.0722));
                 float twilightTransition = saturate(sunHeight * 12.0 + 0.5);
-                float3 twilightAmbient = lerp(atmosphereTint * 0.65, dayAmbient, twilightTransition);
+                float3 twilightAmbient = lerp(atmosphereAmbient * 0.8, dayAmbient, twilightTransition);
 
                 float3 activeAmbient = lerp(nightAmbient, twilightAmbient, saturate(skyLuma * 18.0));
                 float cloudCosTheta = dot(rayDir, mainLightDir);
@@ -604,7 +649,15 @@ Shader "Horizon/World Clouds"
 
                         if (lightH >= 0.0 && lightH <= 1.0)
                         {
-                            float ld = SampleCloudDensityUnified(lightSamplePos, lightH, lod + 1.5, weather, false, 0.0);
+                            CloudWeather lightWeather = weather;
+                            if (k >= 2)
+                            {
+                                float2 lwUV = lightSamplePos.xz * CLOUD_WEATHER_FREQ * _CloudScale + (_CloudWind * 0.1) + weatherDrift;
+                                float4 lwData = tex2Dlod(_WeatherMapTex, float4(lwUV, 0, lod + 1.5));
+                                lightWeather.coverage = lwData.r;
+                                lightWeather.density = lwData.a;
+                            }
+                            float ld = SampleCloudDensityUnified(lightSamplePos, lightH, lod + 1.5, lightWeather, false, 0.0);
                             totalLightDens += ld;
                             lightOpticalDepth += ld * (t1 - t0) * absorptionCoeff;
                         }
@@ -621,7 +674,7 @@ Shader "Horizon/World Clouds"
                     float rayAltAboveGround = (pDotL < 0.0) ? (sqrt(max(0.0, dMinSq)) - CLOUD_PLANET_RADIUS) : 100000.0;
                     float earthShadow = smoothstep(-1500.0, 6500.0, rayAltAboveGround);
 
-                    float msFactor = EvaluateMultiScattering(lightOpticalDepth, cloudCosTheta, sunWeight) * 0.75;
+                    float msFactor = EvaluateMultiScattering(lightOpticalDepth, cloudCosTheta, sunWeight, _CloudSilverLining, _CloudMultiScatter);
                     half3 directLight = activeLightColor * (msFactor * earthShadow);
 
                     if (cloudCosTheta > 0.90 && earthShadow > 0.6)
@@ -649,6 +702,8 @@ Shader "Horizon/World Clouds"
                     lastT = targetT;
                 }
 
+                if (transmittance > 0.999) discard;
+
                 float distFade = 1.0 - smoothstep(maxDist * 0.7, maxDist, distToStart);
                 float horizonAlphaFade = (camOrigin.y > cloudBottomRad) ? 1.0 : smoothstep(-0.02, 0.08, rayDir.y);
                 float totalFade = distFade * horizonAlphaFade;
@@ -657,11 +712,28 @@ Shader "Horizon/World Clouds"
                 transmittance = lerp(1.0, transmittance, totalFade);
 
                 float finalAlpha = 1.0 - transmittance;
-                
-                float3 cloudColorLDR = accumColor;
-                cloudColorLDR *= _Exposure;
-                cloudColorLDR = saturate((cloudColorLDR * (2.51 * cloudColorLDR + 0.03)) / (cloudColorLDR * (2.43 * cloudColorLDR + 0.59) + 0.14));
+                if (finalAlpha <= 0.001) discard;
 
+                // Un-premultiply before Aerial Perspective and non-linear ACES so edges never turn grey
+                float3 cloudRadiance = accumColor / finalAlpha;
+
+                // Aerial perspective toward physical atmosphere at far distances
+                float aerialFactor = smoothstep(maxDist * 0.15, maxDist * 0.90, distToStart) * 0.70;
+                cloudRadiance = lerp(cloudRadiance, atmosResult.rgb, aerialFactor);
+
+                // Exposure + ACES Filmic tonemap
+                cloudRadiance *= _Exposure;
+                float3 cloudColorLDR = saturate((cloudRadiance * (2.51 * cloudRadiance + 0.03)) / (cloudRadiance * (2.43 * cloudRadiance + 0.59) + 0.14));
+
+                // Horizon fog in LDR (matches HorizonSkyboxShader)
+                float fogHeightFactor = max(rayDir.y, 0.0);
+                float horizonMask = 1.0 - smoothstep(0.0, 0.25, fogHeightFactor);
+                horizonMask = pow(horizonMask, 2.0);
+                float finalFogMask = horizonMask * _HorizonFogBlend;
+                float3 fogColor = lerp(_HorizonFogColor.rgb, cloudColorLDR, 0.5);
+                cloudColorLDR = lerp(cloudColorLDR, fogColor, finalFogMask);
+
+                // Premultiply ONCE for Blend One OneMinusSrcAlpha
                 return fixed4(cloudColorLDR * finalAlpha, finalAlpha);
             }
             ENDCG

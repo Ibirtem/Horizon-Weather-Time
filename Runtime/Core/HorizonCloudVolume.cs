@@ -35,6 +35,9 @@ namespace BlackHorizon.HorizonWeatherTime
         [System.NonSerialized] private int _MieDirectionalGID;
         [System.NonSerialized] private int _TransmittanceLUTID;
 
+        [System.NonSerialized] private int _CloudCurlStrengthID, _CloudSilverLiningID, _CloudMultiScatterID, _CloudAmbientIntensityID;
+        [System.NonSerialized] private int _HorizonFogColorID, _HorizonFogBlendID;
+
         private void InitializeShaderIDs()
         {
 #if UDONSHARP
@@ -58,6 +61,13 @@ namespace BlackHorizon.HorizonWeatherTime
             _CurlNoiseTexID = VRCShader.PropertyToID("_CurlNoiseTex");
             _CloudWindID = VRCShader.PropertyToID("_CloudWind");
             _CloudTimeID = VRCShader.PropertyToID("_CloudTime");
+
+            _CloudCurlStrengthID = VRCShader.PropertyToID("_CloudCurlStrength");
+            _CloudSilverLiningID = VRCShader.PropertyToID("_CloudSilverLining");
+            _CloudMultiScatterID = VRCShader.PropertyToID("_CloudMultiScatter");
+            _CloudAmbientIntensityID = VRCShader.PropertyToID("_CloudAmbientIntensity");
+            _HorizonFogColorID = VRCShader.PropertyToID("_HorizonFogColor");
+            _HorizonFogBlendID = VRCShader.PropertyToID("_HorizonFogBlend");
 #else
             _CloudAltitudeID = Shader.PropertyToID("_CloudAltitude");
             _CloudThicknessID = Shader.PropertyToID("_CloudThickness");
@@ -79,6 +89,13 @@ namespace BlackHorizon.HorizonWeatherTime
             _CurlNoiseTexID = Shader.PropertyToID("_CurlNoiseTex");
             _CloudWindID = Shader.PropertyToID("_CloudWind");
             _CloudTimeID = Shader.PropertyToID("_CloudTime");
+
+            _CloudCurlStrengthID = Shader.PropertyToID("_CloudCurlStrength");
+            _CloudSilverLiningID = Shader.PropertyToID("_CloudSilverLining");
+            _CloudMultiScatterID = Shader.PropertyToID("_CloudMultiScatter");
+            _CloudAmbientIntensityID = Shader.PropertyToID("_CloudAmbientIntensity");
+            _HorizonFogColorID = Shader.PropertyToID("_HorizonFogColor");
+            _HorizonFogBlendID = Shader.PropertyToID("_HorizonFogBlend");
 
 #endif
 
@@ -177,11 +194,14 @@ private void Awake()
          */
         public void UpdateClouds(
             Texture3D cloudTex, Texture weatherMapTex, Texture blueNoiseTex, Texture2D curlNoiseTex,
-            float altitude, float scale, float coverage, float density, float detail, float wisp,
+            float altitude, float thickness, float scale, float coverage, float density,
+            float detail, float wisp, float curlStrength,
             Vector2 windOffset, float cloudTime,
             Color baseColor, Color shadowColor, float scatter,
+            float silverLining, float multiScattering, float ambientIntensity,
             Vector3 sunDir, Vector3 moonDir, Color moonColor,
-            float rayleigh, float turbidity, float mieCoeff, float mieG, Texture lut) // Новые параметры
+            float rayleigh, float turbidity, float mieCoeff, float mieG,
+            float exposure, Color fogColor, float fogBlend, Texture lut)
         {
             if (!_isInitialized) InitializeShaderIDs();
             if (volumeRenderer == null) return;
@@ -189,12 +209,18 @@ private void Awake()
             if (mat == null) return;
 
             mat.SetFloat(_CloudAltitudeID, altitude);
+            mat.SetFloat(_CloudThicknessID, thickness);
             mat.SetFloat(_CloudCoverageID, coverage);
             mat.SetFloat(_CloudDensityID, density);
             mat.SetFloat(_CloudScaleID, scale);
             mat.SetFloat(_CloudDetailID, detail);
             mat.SetFloat(_CloudWispID, wisp);
+            mat.SetFloat(_CloudCurlStrengthID, curlStrength);
             mat.SetFloat(_CloudScatterID, scatter);
+            mat.SetFloat(_CloudSilverLiningID, silverLining);
+            mat.SetFloat(_CloudMultiScatterID, multiScattering);
+            mat.SetFloat(_CloudAmbientIntensityID, ambientIntensity);
+            mat.SetFloat(_ExposureID, exposure);
 
             mat.SetVector(_CloudWindID, windOffset);
             mat.SetFloat(_CloudTimeID, cloudTime);
@@ -210,6 +236,8 @@ private void Awake()
             mat.SetFloat(_TurbidityID, turbidity);
             mat.SetFloat(_MieCoefficientID, mieCoeff);
             mat.SetFloat(_MieDirectionalGID, mieG);
+            mat.SetColor(_HorizonFogColorID, fogColor);
+            mat.SetFloat(_HorizonFogBlendID, fogBlend);
             if (lut != null) mat.SetTexture(_TransmittanceLUTID, lut);
 
             if (cloudTex != null) mat.SetTexture(_CloudNoise3DID, cloudTex);
@@ -283,6 +311,8 @@ private void Awake()
                 mr.receiveShadows = false;
                 mr.lightProbeUsage = UnityEngine.Rendering.LightProbeUsage.Off;
                 mr.reflectionProbeUsage = UnityEngine.Rendering.ReflectionProbeUsage.Off;
+
+                mr.localBounds = new Bounds(Vector3.zero, Vector3.one * 200000f);
 
                 if (volumeMaterial != null && mr.sharedMaterial != volumeMaterial)
                 {

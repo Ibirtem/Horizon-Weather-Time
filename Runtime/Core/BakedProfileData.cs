@@ -96,6 +96,12 @@ namespace BlackHorizon.HorizonWeatherTime
         public Color cloudShadowColor = new Color(0.35f, 0.4f, 0.5f);
         public float cloudLightScattering = 1.5f;
 
+        public float cloudThickness = 2500f;
+        public float cloudCurlStrength = 0.07f;
+        public float cloudSilverLining = 1.0f;
+        public float cloudMultiScattering = 1.0f;
+        public float cloudAmbientIntensity = 1.0f;
+
         // =====================================================
         // CIRRUS CLOUDS
         // =====================================================
@@ -129,6 +135,30 @@ namespace BlackHorizon.HorizonWeatherTime
         public Vector3 volumeBounds = new Vector3(40f, 40f, 40f);
         public float particleSize = 0.05f;
         public float weatherDensity = 1.0f;
+
+        // =====================================================
+        // AUDIO
+        // =====================================================
+        [Header("Audio")]
+        public bool audioEnabled = true;
+        public float audioMasterVolume = 1.0f;
+        public AudioClip rainExteriorStereoClip;
+        public AudioClip rainExteriorMonoClip;
+        public AudioClip rainInteriorStereoClip;
+        public AudioClip rainRoofMonoClip;
+        public AudioClip windBaseStereoClip;
+        public AudioClip windGustStereoClip;
+        public float rainVolume = 0.0f;
+        public float rainInteriorScale = 0.45f;
+        public float rainRoofScale = 0.65f;
+        public float rainPitch = 1.0f;
+        public float windVolume = 0.2f;
+        public float windGustStrength = 0.35f;
+        public float windGustSpeed = 0.25f;
+        public float windInteriorScale = 0.25f;
+        public float windPitch = 1.0f;
+        public float minBunkerScale = 0.05f;
+        public float acousticSmoothing = 3.5f;
 
         // =====================================================
         // EDITOR-ONLY: Copy logic
@@ -200,6 +230,12 @@ namespace BlackHorizon.HorizonWeatherTime
                 cloudShadowColor = cp.shadowColor;
                 cloudLightScattering = cp.lightScattering;
 
+                cloudThickness = cp.thickness;
+                cloudCurlStrength = cp.curlStrength;
+                cloudSilverLining = cp.silverLining;
+                cloudMultiScattering = cp.multiScattering;
+                cloudAmbientIntensity = cp.ambientIntensity;
+
                 cirrusNoiseTexture = cp.cirrusNoiseTexture;
                 cirrusCoverage = cp.cirrusCoverage;
                 cirrusOpacity = cp.cirrusOpacity;
@@ -239,6 +275,30 @@ namespace BlackHorizon.HorizonWeatherTime
                 weatherDensity = ep.weatherDensity;
                 return;
             }
+
+            if (module is AudioProfile ap)
+            {
+                audioEnabled = ap.enabled;
+                audioMasterVolume = ap.masterVolume;
+                rainExteriorStereoClip = ap.rainExteriorStereoClip;
+                rainExteriorMonoClip = ap.rainExteriorMonoClip;
+                rainInteriorStereoClip = ap.rainInteriorStereoClip;
+                rainRoofMonoClip = ap.rainRoofMonoClip;
+                windBaseStereoClip = ap.windBaseStereoClip;
+                windGustStereoClip = ap.windGustStereoClip;
+                rainVolume = ap.rainVolume;
+                rainInteriorScale = ap.rainInteriorScale;
+                rainRoofScale = ap.rainRoofScale;
+                rainPitch = ap.rainPitch;
+                windVolume = ap.windVolume;
+                windGustStrength = ap.windGustStrength;
+                windGustSpeed = ap.windGustSpeed;
+                windInteriorScale = ap.windInteriorScale;
+                windPitch = ap.windPitch;
+                minBunkerScale = ap.minBunkerScale;
+                acousticSmoothing = ap.acousticSmoothing;
+                return;
+            }
         }
 
         /// <summary>
@@ -255,6 +315,7 @@ namespace BlackHorizon.HorizonWeatherTime
             CopyFromModule(wp.moonProfile);
             CopyFromModule(wp.fogProfile);
             CopyFromModule(wp.effectsProfile);
+            CopyFromModule(wp.audioProfile);
         }
 #endif
     }

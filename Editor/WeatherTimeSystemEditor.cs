@@ -39,11 +39,13 @@ namespace BlackHorizon.HorizonWeatherTime
         private SerializedProperty _moonIndexProp;
         private SerializedProperty _fogIndexProp;
         private SerializedProperty _effectsIndexProp;
+        private SerializedProperty _audioIndexProp;
 
         // System Refs
         private SerializedProperty _lightingManagerProp;
         private SerializedProperty _skyManagerProp;
         private SerializedProperty _weatherEffectsManagerProp;
+        private SerializedProperty _weatherAudioManagerProp;
         private SerializedProperty _reflectionManagerProp;
 
         // UI State
@@ -54,6 +56,9 @@ namespace BlackHorizon.HorizonWeatherTime
         private bool _isVRChatProject = false;
         private bool _integrationActive = false;
         private string _statusMessage = "";
+
+        private static Type _cachedVRCSpatialAudioType;
+        private static bool _vrcSpatialAudioTypeSearched;
 
         private bool _lutMissing = false;
 
@@ -97,10 +102,21 @@ namespace BlackHorizon.HorizonWeatherTime
             AssignManagerIfMissing("_lightingManager", typeof(LightingManager));
             AssignManagerIfMissing("_skyManager", typeof(SkyManager));
             AssignManagerIfMissing("_weatherEffectsManager", typeof(WeatherEffectsManager));
+
+            if (_target.GetComponentInChildren<WeatherAudioManager>(true) == null)
+            {
+                GameObject audioObj = new GameObject("Audio");
+                audioObj.transform.SetParent(_target.transform);
+                audioObj.transform.localPosition = Vector3.zero;
+                audioObj.AddComponent<WeatherAudioManager>();
+            }
+
+            AssignManagerIfMissing("_weatherAudioManager", typeof(WeatherAudioManager));
             AssignManagerIfMissing("_reflectionManager", typeof(ReflectionManager));
 
             serializedObject.ApplyModifiedProperties();
             serializedObject.Update();
+            SyncUdonProxy(_target);
         }
 
         private void AssignManagerIfMissing(string propertyName, Type managerType)
@@ -143,11 +159,13 @@ namespace BlackHorizon.HorizonWeatherTime
             _moonIndexProp = serializedObject.FindProperty("_moonIndex");
             _fogIndexProp = serializedObject.FindProperty("_fogIndex");
             _effectsIndexProp = serializedObject.FindProperty("_effectsIndex");
+            _audioIndexProp = serializedObject.FindProperty("_audioIndex");
 
             // Modules
             _lightingManagerProp = serializedObject.FindProperty("_lightingManager");
             _skyManagerProp = serializedObject.FindProperty("_skyManager");
             _weatherEffectsManagerProp = serializedObject.FindProperty("_weatherEffectsManager");
+            _weatherAudioManagerProp = serializedObject.FindProperty("_weatherAudioManager");
             _reflectionManagerProp = serializedObject.FindProperty("_reflectionManager");
         }
 
@@ -157,24 +175,26 @@ namespace BlackHorizon.HorizonWeatherTime
         /// </summary>
         private void ScheduleInitialBakeAndRefresh()
         {
+            WeatherTimeSystem targetRef = _target;
             EditorApplication.delayCall += () =>
             {
-                if (_target == null) return;
+                if (targetRef == null) return;
 
                 var discovered = WeatherBakeUtility.ScanModuleFolders();
-                bool needsModuleBake = WeatherBakeUtility.NeedsRebakeModules(_target, discovered);
+                bool needsModuleBake = WeatherBakeUtility.NeedsRebakeModules(targetRef, discovered);
 
                 if (needsModuleBake)
                 {
-                    WeatherBakeUtility.BakeModules(_target, discovered);
+                    WeatherBakeUtility.BakeModules(targetRef, discovered);
 
-                    if (_target.weatherProfilesList != null && _target.weatherProfilesList.Length > 0)
+                    if (targetRef.weatherProfilesList != null && targetRef.weatherProfilesList.Length > 0)
                     {
-                        _target.SetWeatherProfile(0);
+                        targetRef.SetWeatherProfile(0);
                     }
                 }
 
-                _target.Refresh();
+                CheckAndConfigureAudioRig(targetRef);
+                targetRef.Refresh();
                 UnityEditor.SceneView.RepaintAll();
 
                 if (needsModuleBake)
@@ -470,6 +490,7 @@ namespace BlackHorizon.HorizonWeatherTime
             DrawModuleDropdown("Moon", _moonIndexProp, "Moon", WeatherTimeSystem.MOD_MOON, discoveredModules);
             DrawModuleDropdown("Fog", _fogIndexProp, "Fog", WeatherTimeSystem.MOD_FOG, discoveredModules);
             DrawModuleDropdown("Effects", _effectsIndexProp, "Effects", WeatherTimeSystem.MOD_EFFECTS, discoveredModules);
+            DrawModuleDropdown("Audio", _audioIndexProp, "Audio", WeatherTimeSystem.MOD_AUDIO, discoveredModules);
 
             if (Application.isPlaying && _target.IsTransitioning)
                 Repaint();
@@ -509,7 +530,9 @@ namespace BlackHorizon.HorizonWeatherTime
             EditorGUILayout.PropertyField(_lightingManagerProp);
             EditorGUILayout.PropertyField(_skyManagerProp);
             EditorGUILayout.PropertyField(_weatherEffectsManagerProp);
+            EditorGUILayout.PropertyField(_weatherAudioManagerProp);
             EditorGUILayout.PropertyField(_reflectionManagerProp);
+
             GUI.enabled = true;
         }
 
@@ -540,6 +563,8 @@ namespace BlackHorizon.HorizonWeatherTime
                 case "Moon": return _moonIndexProp;
                 case "Fog": return _fogIndexProp;
                 case "Effects": return _effectsIndexProp;
+                case "Audio": return _audioIndexProp;
+
                 default: return null;
             }
         }
@@ -568,8 +593,17 @@ namespace BlackHorizon.HorizonWeatherTime
                     _moonIndexProp.intValue = FindModuleIndex("Moon", wp.moonProfile, discoveredModules);
                     _fogIndexProp.intValue = FindModuleIndex("Fog", wp.fogProfile, discoveredModules);
                     _effectsIndexProp.intValue = FindModuleIndex("Effects", wp.effectsProfile, discoveredModules);
+                    _audioIndexProp.intValue = FindModuleIndex("Audio", wp.audioProfile, discoveredModules);
                 }
             }
+            
+            if (Application.isPlaying)
+            {
+                serializedObject.ApplyModifiedProperties();
+                _target.SetWeatherProfile(newIndex);
+                return;
+            }
+
             serializedObject.ApplyModifiedProperties();
             _target.Refresh();
         }
@@ -663,6 +697,10 @@ namespace BlackHorizon.HorizonWeatherTime
                 if (Application.isPlaying && SmoothLayerChanges)
                 {
                     _target.TransitionModuleTo(moduleIndex, newIndex, _target.defaultTransitionDuration);
+                }
+                else if (Application.isPlaying)
+                {
+                    _target.SetModuleState(moduleIndex, newIndex);
                 }
                 else
                 {
@@ -764,6 +802,7 @@ namespace BlackHorizon.HorizonWeatherTime
             ScanAndSyncProfiles();
 
             EnsureProceduralTextures();
+            EnsureProceduralAudio();
             EnsureDefaultPresets();
 
             ScanAndSyncProfiles();
@@ -772,6 +811,7 @@ namespace BlackHorizon.HorizonWeatherTime
             CheckAndConfigureCloudVolume();
             CheckAndConfigureParticleAssets();
             CheckAndConfigureOcclusionCamera();
+            CheckAndConfigureAudioRig(_target);
             CheckSkyManagerInternalTextures();
 
             AssetDatabase.SaveAssets();
@@ -784,12 +824,15 @@ namespace BlackHorizon.HorizonWeatherTime
         private List<WeatherProfile> EnsureDefaultPresets()
         {
             string templatesPresetDir = GetPackageTemplatesPath("Presets");
+            string templatesAudioDir = GetPackageTemplatesPath("Modules/Audio");
             if (string.IsNullOrEmpty(templatesPresetDir)
                 || !Directory.Exists(templatesPresetDir)
-                || Directory.GetFiles(templatesPresetDir, "*.asset").Length == 0)
+                || Directory.GetFiles(templatesPresetDir, "*.asset").Length == 0
+                || string.IsNullOrEmpty(templatesAudioDir)
+                || !Directory.Exists(templatesAudioDir)
+                || Directory.GetFiles(templatesAudioDir, "*.asset").Length == 0)
             {
                 HorizonTemplateGenerator.Generate();
-                templatesPresetDir = GetPackageTemplatesPath("Presets");
             }
 
             var defaultPresets = new List<WeatherProfile>();
@@ -798,11 +841,37 @@ namespace BlackHorizon.HorizonWeatherTime
             WeatherProfile rain = CopyTemplateIfMissing("Template_Rain", "Default Rain");
             WeatherProfile snow = CopyTemplateIfMissing("Template_Snow", "Default Snow");
 
+            EnsureDefaultAudioModules(clear, "Template_Clear");
+            EnsureDefaultAudioModules(rain, "Template_Rain");
+            EnsureDefaultAudioModules(snow, "Template_Snow");
+
             if (clear != null) defaultPresets.Add(clear);
             if (rain != null) defaultPresets.Add(rain);
             if (snow != null) defaultPresets.Add(snow);
 
             return defaultPresets;
+        }
+
+        /**
+         * Ensures a working WeatherProfile has its AudioProfile module copied and linked
+         * when upgrading from versions prior to AudioProfile support.
+         */
+        private void EnsureDefaultAudioModules(WeatherProfile workingPreset, string templateName)
+        {
+            if (workingPreset == null || workingPreset.audioProfile != null) return;
+
+            string templateDir = GetPackageTemplatesPath("Presets");
+            string templatePath = $"{templateDir}/{templateName}.asset";
+            WeatherProfile template = AssetDatabase.LoadAssetAtPath<WeatherProfile>(templatePath);
+            if (template == null || template.audioProfile == null) return;
+
+            AudioProfile copied = CopyModuleIfNeeded(template.audioProfile, "Audio");
+            if (copied != null)
+            {
+                workingPreset.audioProfile = copied;
+                EditorUtility.SetDirty(workingPreset);
+                _modulesCacheDirty = true;
+            }
         }
 
         /// <summary>
@@ -833,6 +902,7 @@ namespace BlackHorizon.HorizonWeatherTime
             MoonProfile mp = CopyModuleIfNeeded(template.moonProfile, "Moon");
             FogProfile fp = CopyModuleIfNeeded(template.fogProfile, "Fog");
             EffectsProfile ep = CopyModuleIfNeeded(template.effectsProfile, "Effects");
+            AudioProfile ap = CopyModuleIfNeeded(template.audioProfile, "Audio");
 
             WeatherProfile preset = ScriptableObject.CreateInstance<WeatherProfile>();
             preset.profileName = outputName;
@@ -842,6 +912,7 @@ namespace BlackHorizon.HorizonWeatherTime
             preset.moonProfile = mp;
             preset.fogProfile = fp;
             preset.effectsProfile = ep;
+            preset.audioProfile = ap;
 
             AssetDatabase.CreateAsset(preset, outputPath);
             EditorUtility.SetDirty(preset);
@@ -986,6 +1057,19 @@ namespace BlackHorizon.HorizonWeatherTime
                 }
                 return;
             }
+
+            if (module is AudioProfile ap)
+            {
+                bool dirty = false;
+                if (ap.rainExteriorStereoClip == null) { ap.rainExteriorStereoClip = AssetDatabase.LoadAssetAtPath<AudioClip>(WeatherAudioGenerator.RAIN_EXT_STEREO_PATH); if (ap.rainExteriorStereoClip != null) dirty = true; }
+                if (ap.rainExteriorMonoClip == null) { ap.rainExteriorMonoClip = AssetDatabase.LoadAssetAtPath<AudioClip>(WeatherAudioGenerator.RAIN_EXT_MONO_PATH); if (ap.rainExteriorMonoClip != null) dirty = true; }
+                if (ap.rainInteriorStereoClip == null) { ap.rainInteriorStereoClip = AssetDatabase.LoadAssetAtPath<AudioClip>(WeatherAudioGenerator.RAIN_INT_STEREO_PATH); if (ap.rainInteriorStereoClip != null) dirty = true; }
+                if (ap.rainRoofMonoClip == null) { ap.rainRoofMonoClip = AssetDatabase.LoadAssetAtPath<AudioClip>(WeatherAudioGenerator.RAIN_ROOF_MONO_PATH); if (ap.rainRoofMonoClip != null) dirty = true; }
+                if (ap.windBaseStereoClip == null) { ap.windBaseStereoClip = AssetDatabase.LoadAssetAtPath<AudioClip>(WeatherAudioGenerator.WIND_BASE_STEREO_PATH); if (ap.windBaseStereoClip != null) dirty = true; }
+                if (ap.windGustStereoClip == null) { ap.windGustStereoClip = AssetDatabase.LoadAssetAtPath<AudioClip>(WeatherAudioGenerator.WIND_GUST_STEREO_PATH); if (ap.windGustStereoClip != null) dirty = true; }
+                if (dirty) EditorUtility.SetDirty(ap);
+                return;
+            }
         }
 
         // --- ASSET HELPERS ---
@@ -1117,6 +1201,207 @@ namespace BlackHorizon.HorizonWeatherTime
                     ConfigureEffectsManagerInstance(manager, particleMesh, snowMat);
                 }
             }
+        }
+
+        /**
+         * Ensures procedural weather WAV stems exist on disk before templates are copied.
+         */
+        private void EnsureProceduralAudio()
+        {
+            if (AssetDatabase.LoadAssetAtPath<AudioClip>(WeatherAudioGenerator.RAIN_EXT_STEREO_PATH) == null ||
+                AssetDatabase.LoadAssetAtPath<AudioClip>(WeatherAudioGenerator.RAIN_EXT_MONO_PATH) == null ||
+                AssetDatabase.LoadAssetAtPath<AudioClip>(WeatherAudioGenerator.RAIN_INT_STEREO_PATH) == null ||
+                AssetDatabase.LoadAssetAtPath<AudioClip>(WeatherAudioGenerator.RAIN_ROOF_MONO_PATH) == null ||
+                AssetDatabase.LoadAssetAtPath<AudioClip>(WeatherAudioGenerator.WIND_BASE_STEREO_PATH) == null ||
+                AssetDatabase.LoadAssetAtPath<AudioClip>(WeatherAudioGenerator.WIND_GUST_STEREO_PATH) == null)
+            {
+                WeatherAudioGenerator.GenerateAllAudio();
+            }
+        }
+
+        /**
+         * Auto-creates and configures the 2D stereo and 3D spatialized AudioSource rig under WeatherAudioManager,
+         * using a fresh SerializedObject so delayed editor callbacks remain safe after inspector disposal.
+         *
+         * @param target Target WeatherTimeSystem instance.
+         */
+        private void CheckAndConfigureAudioRig(WeatherTimeSystem target)
+        {
+            if (target == null) return;
+
+            WeatherAudioManager manager = target.GetComponentInChildren<WeatherAudioManager>(true);
+            if (manager == null) return;
+
+            using (SerializedObject targetSO = new SerializedObject(target))
+            {
+                targetSO.Update();
+                SerializedProperty audioMgrProp = targetSO.FindProperty("_weatherAudioManager");
+                if (audioMgrProp != null && audioMgrProp.objectReferenceValue != manager)
+                {
+                    audioMgrProp.objectReferenceValue = manager;
+                    targetSO.ApplyModifiedPropertiesWithoutUndo();
+                    SyncUdonProxy(target);
+                }
+            }
+
+            using (SerializedObject managerSO = new SerializedObject(manager))
+            {
+                managerSO.Update();
+
+                bool dirty = false;
+                dirty |= EnsureAudioSourceField(managerSO, "rainExterior2D", manager.transform, "Audio_Rain_Exterior_2D", false);
+                dirty |= EnsureAudioSourceField(managerSO, "rainInterior2D", manager.transform, "Audio_Rain_Interior_2D", false);
+                dirty |= EnsureAudioSourceField(managerSO, "windBase2D",     manager.transform, "Audio_Wind_Base_2D",     false);
+                dirty |= EnsureAudioSourceField(managerSO, "windGust2D",     manager.transform, "Audio_Wind_Gust_2D",     false);
+                dirty |= EnsureAudioSourceField(managerSO, "rainOpening3D",  manager.transform, "Audio_Rain_Opening_3D",  true);
+                dirty |= EnsureAudioSourceField(managerSO, "rainRoof3D",     manager.transform, "Audio_Rain_Roof_3D",     true);
+
+                if (dirty)
+                {
+                    managerSO.ApplyModifiedPropertiesWithoutUndo();
+                    EditorUtility.SetDirty(manager);
+                    SyncUdonProxy(manager);
+                }
+            }
+        }
+
+        private bool EnsureAudioSourceField(SerializedObject managerSO, string propName, Transform parent, string objName, bool is3D)
+        {
+            SerializedProperty prop = managerSO.FindProperty(propName);
+            AudioSource src = EnsureAudioSource(parent, objName, is3D);
+            if (prop != null && prop.objectReferenceValue != src)
+            {
+                prop.objectReferenceValue = src;
+                return true;
+            }
+            return false;
+        }
+
+        /**
+         * Flushes C# proxy field modifications to the backing UdonBehaviour when UdonSharp is installed.
+         *
+         * @param proxy Target UdonSharpBehaviour component.
+         */
+        private static void SyncUdonProxy(Component proxy)
+        {
+            if (proxy == null) return;
+            try
+            {
+                Type usEditorUtility = Type.GetType("UdonSharpEditor.UdonSharpEditorUtility, UdonSharp.Editor");
+                if (usEditorUtility == null) return;
+
+                Type policyType = Type.GetType("UdonSharpEditor.ProxySerializationPolicy, UdonSharp.Editor");
+                if (policyType != null)
+                {
+                    MethodInfo copyBack = usEditorUtility.GetMethod(
+                        "CopyProxyToUdon",
+                        BindingFlags.Public | BindingFlags.Static,
+                        null,
+                        new[] { proxy.GetType().BaseType != null ? Type.GetType("UdonSharp.UdonSharpBehaviour, UdonSharp.Runtime") : proxy.GetType(), policyType },
+                        null);
+
+                    if (copyBack != null)
+                    {
+                        copyBack.Invoke(null, new object[] { proxy, Enum.ToObject(policyType, 0) });
+                        return;
+                    }
+                }
+
+                MethodInfo copySimple = usEditorUtility.GetMethod(
+                    "CopyProxyToUdon",
+                    BindingFlags.Public | BindingFlags.Static,
+                    null,
+                    new[] { Type.GetType("UdonSharp.UdonSharpBehaviour, UdonSharp.Runtime") },
+                    null);
+                copySimple?.Invoke(null, new object[] { proxy });
+            }
+            catch { }
+        }
+
+        private AudioSource EnsureAudioSource(Transform parent, string objName, bool is3D)
+        {
+            Transform child = parent.Find(objName);
+            if (child == null)
+            {
+                GameObject go = new GameObject(objName);
+                go.transform.SetParent(parent);
+                go.transform.localPosition = Vector3.zero;
+                child = go.transform;
+            }
+
+            AudioSource src = child.GetComponent<AudioSource>();
+            if (src == null) src = child.gameObject.AddComponent<AudioSource>();
+
+            src.playOnAwake = false;
+            src.loop = true;
+            src.volume = 0f;
+            src.dopplerLevel = 0f;
+            src.spatialBlend = is3D ? 1f : 0f;
+            src.spatialize = is3D;
+            src.rolloffMode = AudioRolloffMode.Linear;
+            src.minDistance = is3D ? 1.0f : 1000f;
+            src.maxDistance = is3D ? 16.0f : 10000f;
+            src.spread = is3D ? 80f : 0f;
+
+            ConfigureVRCSpatialAudioIfPresent(child.gameObject, is3D);
+            EditorUtility.SetDirty(src);
+            return src;
+        }
+
+        /**
+         * Resolves the concrete non-abstract VRCSpatialAudioSource component type across loaded assemblies.
+         *
+         * @return Concrete VRCSpatialAudioSource Type, or null if the VRChat SDK is not installed.
+         */
+        private static Type GetVRCSpatialAudioType()
+        {
+            if (_vrcSpatialAudioTypeSearched) return _cachedVRCSpatialAudioType;
+            _vrcSpatialAudioTypeSearched = true;
+
+            _cachedVRCSpatialAudioType =
+                Type.GetType("VRC.SDK3.Components.VRCSpatialAudioSource, VRCSDK3") ??
+                Type.GetType("VRC.SDK3.Components.VRCSpatialAudioSource, VRC.SDK3");
+
+            if (_cachedVRCSpatialAudioType == null || _cachedVRCSpatialAudioType.IsAbstract)
+            {
+                _cachedVRCSpatialAudioType = null;
+                foreach (Assembly asm in AppDomain.CurrentDomain.GetAssemblies())
+                {
+                    Type candidate = asm.GetType("VRC.SDK3.Components.VRCSpatialAudioSource");
+                    if (candidate != null && !candidate.IsAbstract)
+                    {
+                        _cachedVRCSpatialAudioType = candidate;
+                        break;
+                    }
+                }
+            }
+
+            return _cachedVRCSpatialAudioType;
+        }
+
+        private void ConfigureVRCSpatialAudioIfPresent(GameObject go, bool enableSpatialization)
+        {
+            Type vrcSpatialType = GetVRCSpatialAudioType();
+            if (vrcSpatialType == null || vrcSpatialType.IsAbstract) return;
+
+            Component comp = go.GetComponent(vrcSpatialType);
+            if (comp == null) comp = go.AddComponent(vrcSpatialType);
+            if (comp == null) return;
+
+            SerializedObject so = new SerializedObject(comp);
+            SerializedProperty gainProp = so.FindProperty("Gain");
+            SerializedProperty nearProp = so.FindProperty("Near");
+            SerializedProperty farProp = so.FindProperty("Far");
+            SerializedProperty curveProp = so.FindProperty("UseAudioSourceVolumeCurve");
+            SerializedProperty spatProp = so.FindProperty("EnableSpatialization");
+
+            if (gainProp != null) gainProp.floatValue = 0f;
+            if (nearProp != null) nearProp.floatValue = 0f;
+            if (farProp != null) farProp.floatValue = enableSpatialization ? 16f : 10000f;
+            if (curveProp != null) curveProp.boolValue = true;
+            if (spatProp != null) spatProp.boolValue = enableSpatialization;
+
+            so.ApplyModifiedProperties();
         }
 
         // --- SUB-FUNCTIONS ---

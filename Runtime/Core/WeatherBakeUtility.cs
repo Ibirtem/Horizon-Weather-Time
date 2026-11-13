@@ -22,6 +22,7 @@ namespace BlackHorizon.HorizonWeatherTime
             ("Moon",     typeof(MoonProfile)),
             ("Fog",      typeof(FogProfile)),
             ("Effects",  typeof(EffectsProfile)),
+            ("Audio",    typeof(AudioProfile)),
         };
 
         public static Dictionary<string, List<ScriptableObject>> ScanModuleFolders()
@@ -132,6 +133,7 @@ namespace BlackHorizon.HorizonWeatherTime
             system._resolvedMoon     = EnsureBufferComponent(bufferRoot, "_Moon");
             system._resolvedFog      = EnsureBufferComponent(bufferRoot, "_Fog");
             system._resolvedEffects  = EnsureBufferComponent(bufferRoot, "_Effects");
+            system._resolvedAudio    = EnsureBufferComponent(bufferRoot, "_Audio");
 
             EditorUtility.SetDirty(system);
         }
@@ -204,6 +206,7 @@ namespace BlackHorizon.HorizonWeatherTime
                 case "Moon":     system.bakedMoonModules = array; break;
                 case "Fog":      system.bakedFogModules = array; break;
                 case "Effects":  system.bakedEffectsModules = array; break;
+                case "Audio":    system.bakedAudioModules = array; break;
             }
         }
 
@@ -223,6 +226,7 @@ namespace BlackHorizon.HorizonWeatherTime
             if (!IsValidBakedArray(discoveredModules, "Moon",     system.bakedMoonModules)) return true;
             if (!IsValidBakedArray(discoveredModules, "Fog",      system.bakedFogModules)) return true;
             if (!IsValidBakedArray(discoveredModules, "Effects",  system.bakedEffectsModules)) return true;
+            if (!IsValidBakedArray(discoveredModules, "Audio",    system.bakedAudioModules)) return true;
 
             if (system.presetToLighting == null || 
                 (system.weatherProfilesList != null && system.presetToLighting.Length != system.weatherProfilesList.Length)) 
@@ -230,7 +234,8 @@ namespace BlackHorizon.HorizonWeatherTime
 
             if (system._resolvedLighting == null || system._resolvedSky == null ||
                 system._resolvedCloud == null || system._resolvedMoon == null ||
-                system._resolvedFog == null || system._resolvedEffects == null)
+                system._resolvedFog == null || system._resolvedEffects == null ||
+                system._resolvedAudio == null)
                 return true;
 
             return false;
@@ -274,6 +279,7 @@ namespace BlackHorizon.HorizonWeatherTime
             system.presetToMoon = new int[count];
             system.presetToFog = new int[count];
             system.presetToEffects = new int[count];
+            system.presetToAudio = new int[count];
 
             for (int i = 0; i < count; i++)
             {
@@ -286,6 +292,7 @@ namespace BlackHorizon.HorizonWeatherTime
                     system.presetToMoon[i] = FindValidIndex("Moon", wp.moonProfile, discoveredModules);
                     system.presetToFog[i] = FindValidIndex("Fog", wp.fogProfile, discoveredModules);
                     system.presetToEffects[i] = FindValidIndex("Effects", wp.effectsProfile, discoveredModules);
+                    system.presetToAudio[i] = FindValidIndex("Audio", wp.audioProfile, discoveredModules);
                 }
                 else if (system.weatherProfilesList[i] != null)
                 {

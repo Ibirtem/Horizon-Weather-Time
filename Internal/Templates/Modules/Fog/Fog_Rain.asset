@@ -10,11 +10,11 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 2ae9b8df60f3b32468afa3c3239552fc, type: 3}
-  m_Name: Fog_Rain
+  m_Name: 
   m_EditorClassIdentifier: 
   enabled: 1
-  fogMode: 2
-  dayColor: {r: 0.5058824, g: 0.53333336, b: 0.58431375, a: 1}
+  fogMode: 3
+  dayColor: {r: 0.7, g: 0.8, b: 1, a: 1}
   nightColor: {r: 0.05, g: 0.05, b: 0.15, a: 1}
   density: 0.002
   startDistance: 10

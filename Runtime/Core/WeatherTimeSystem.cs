@@ -78,6 +78,7 @@ namespace BlackHorizon.HorizonWeatherTime
         [SerializeField, HideInInspector] private int _moonIndex = 0;
         [SerializeField, HideInInspector] private int _fogIndex = 0;
         [SerializeField, HideInInspector] private int _effectsIndex = 0;
+        [SerializeField, HideInInspector] private int _audioIndex = 0;
 
         // =========================================================
         // WEATHER TRANSITIONS
@@ -92,7 +93,8 @@ namespace BlackHorizon.HorizonWeatherTime
         public const int MOD_MOON = 3;
         public const int MOD_FOG = 4;
         public const int MOD_EFFECTS = 5;
-        private const int MODULE_COUNT = 6;
+        public const int MOD_AUDIO = 6;
+        private const int MODULE_COUNT = 7;
 
         private bool[] _modTransitioning;
         private float[] _modTransitionElapsed;
@@ -104,6 +106,7 @@ namespace BlackHorizon.HorizonWeatherTime
         private int _targetMoonIndex = 0;
         private int _targetFogIndex = 0;
         private int _targetEffectsIndex = 0;
+        private int _targetAudioIndex = 0;
 
         // Pre-allocated interpolation buffers (created at bake time)
         [HideInInspector] public BakedProfileData _resolvedLighting;
@@ -112,6 +115,7 @@ namespace BlackHorizon.HorizonWeatherTime
         [HideInInspector] public BakedProfileData _resolvedMoon;
         [HideInInspector] public BakedProfileData _resolvedFog;
         [HideInInspector] public BakedProfileData _resolvedEffects;
+        [HideInInspector] public BakedProfileData _resolvedAudio;
 
         public int GetCurrentIndex(int module) { return GetIndex(module, false); }
         public int GetTargetIndex(int module) { return GetIndex(module, true); }
@@ -134,6 +138,7 @@ namespace BlackHorizon.HorizonWeatherTime
         public int TargetMoonIndex { get { return _targetMoonIndex; } }
         public int TargetFogIndex { get { return _targetFogIndex; } }
         public int TargetEffectsIndex { get { return _targetEffectsIndex; } }
+        public int TargetAudioIndex { get { return _targetAudioIndex; } }
 
         private int _lastActiveProfileIndex = -1;
 
@@ -159,6 +164,7 @@ namespace BlackHorizon.HorizonWeatherTime
         [HideInInspector] public BakedProfileData[] bakedMoonModules;
         [HideInInspector] public BakedProfileData[] bakedFogModules;
         [HideInInspector] public BakedProfileData[] bakedEffectsModules;
+        [HideInInspector] public BakedProfileData[] bakedAudioModules;
 
         [Header("Preset Mappings (Auto-generated)")]
         [HideInInspector] public int[] presetToLighting;
@@ -167,6 +173,7 @@ namespace BlackHorizon.HorizonWeatherTime
         [HideInInspector] public int[] presetToMoon;
         [HideInInspector] public int[] presetToFog;
         [HideInInspector] public int[] presetToEffects;
+        [HideInInspector] public int[] presetToAudio;
 
         // =========================================================
 
@@ -174,6 +181,7 @@ namespace BlackHorizon.HorizonWeatherTime
         [SerializeField] private LightingManager _lightingManager;
         [SerializeField] private SkyManager _skyManager;
         [SerializeField] private WeatherEffectsManager _weatherEffectsManager;
+        [SerializeField] private WeatherAudioManager _weatherAudioManager;
         [SerializeField] private ReflectionManager _reflectionManager;
 
         private const float SECONDS_IN_DAY = 86400f;
@@ -186,6 +194,7 @@ namespace BlackHorizon.HorizonWeatherTime
         public int MoonIndex => _moonIndex;
         public int FogIndex => _fogIndex;
         public int EffectsIndex => _effectsIndex;
+        public int AudioIndex => _audioIndex;
 
         private Camera _mainCameraCache;
 
@@ -197,10 +206,13 @@ namespace BlackHorizon.HorizonWeatherTime
         private void Reset()
         {
             Debug.Log("<b><color=#33FF33>[LOG]</color></b> <color=white>[WeatherTimeSystem] Running first-time setup...</color>", this);
+            
             _lightingManager = FindOrCreateManager<LightingManager>("Lighting");
             _skyManager = FindOrCreateManager<SkyManager>("Sky");
             _weatherEffectsManager = FindOrCreateManager<WeatherEffectsManager>("Effects");
+            _weatherAudioManager = FindOrCreateManager<WeatherAudioManager>("Audio");
             _reflectionManager = FindOrCreateManager<ReflectionManager>("Reflections");
+
             if (_reflectionManager != null) _reflectionManager.EnsureProbeExists();
         }
 
@@ -288,7 +300,8 @@ namespace BlackHorizon.HorizonWeatherTime
                 if (_weatherEffectsManager != null)
                 {
                     Vector3 targetPos = GetViewPosition();
-                    _weatherEffectsManager.UpdatePosition(targetPos);
+                    if (_weatherEffectsManager != null) _weatherEffectsManager.UpdatePosition(targetPos);
+                    if (_weatherAudioManager != null) _weatherAudioManager.UpdateAudioPosition(targetPos);
                 }
             }
         }
@@ -354,10 +367,8 @@ namespace BlackHorizon.HorizonWeatherTime
             TickModuleTransitions();
             UpdateSystem();
 
-            if (_weatherEffectsManager != null)
-            {
-                _weatherEffectsManager.UpdatePosition(playerHeadPos);
-            }
+            if (_weatherEffectsManager != null) _weatherEffectsManager.UpdatePosition(playerHeadPos);
+            if (_weatherAudioManager != null) _weatherAudioManager.UpdateAudioPosition(playerHeadPos);
         }
 
         /// <summary>
@@ -471,7 +482,8 @@ namespace BlackHorizon.HorizonWeatherTime
         public void SetWeatherProfile(int index)
         {
             if (presetToLighting == null || presetToSky == null || presetToCloud == null ||
-                presetToMoon == null || presetToFog == null || presetToEffects == null) return;
+                presetToMoon == null || presetToFog == null || presetToEffects == null ||
+                presetToAudio == null) return;
 
             if (index < 0 || index >= presetToLighting.Length) return;
 
@@ -481,11 +493,17 @@ namespace BlackHorizon.HorizonWeatherTime
                 presetToCloud[index],
                 presetToMoon[index],
                 presetToFog[index],
-                presetToEffects[index]
+                presetToEffects[index],
+                presetToAudio[index]
             );
         }
 
         public void SetModuleStates(int lighting, int sky, int cloud, int moon, int fog, int effects)
+        {
+            SetModuleStates(lighting, sky, cloud, moon, fog, effects, _audioIndex);
+        }
+
+        public void SetModuleStates(int lighting, int sky, int cloud, int moon, int fog, int effects, int audio)
         {
             CancelAllTransitions();
             SetCurrentAndTarget(MOD_LIGHTING, lighting);
@@ -494,12 +512,14 @@ namespace BlackHorizon.HorizonWeatherTime
             SetCurrentAndTarget(MOD_MOON, moon);
             SetCurrentAndTarget(MOD_FOG, fog);
             SetCurrentAndTarget(MOD_EFFECTS, effects);
+            SetCurrentAndTarget(MOD_AUDIO, audio);
             UpdateSystem();
         }
 
         public void SetCloudState(int index) { SetModuleState(MOD_CLOUD, index); }
         public void SetFogState(int index) { SetModuleState(MOD_FOG, index); }
         public void SetEffectsState(int index) { SetModuleState(MOD_EFFECTS, index); }
+        public void SetAudioState(int index) { SetModuleState(MOD_AUDIO, index); }
 
         public void SetPlayerCameraPosition(Vector3 position)
         {
@@ -545,6 +565,7 @@ namespace BlackHorizon.HorizonWeatherTime
             float tM = GetModuleTransitionFactor(MOD_MOON);
             float tF = GetModuleTransitionFactor(MOD_FOG);
             float tE = GetModuleTransitionFactor(MOD_EFFECTS);
+            float tA = GetModuleTransitionFactor(MOD_AUDIO);
 
             BakedProfileData lp = ResolveLightingState(tL);
             BakedProfileData sp = ResolveSkyState(tS);
@@ -552,6 +573,7 @@ namespace BlackHorizon.HorizonWeatherTime
             BakedProfileData mp = ResolveMoonState(tM);
             BakedProfileData fp = ResolveFogState(tF);
             BakedProfileData ep = ResolveEffectsState(tE);
+            BakedProfileData ap = ResolveAudioState(tA);
 
             if (lp == null) return;
 
@@ -590,6 +612,28 @@ namespace BlackHorizon.HorizonWeatherTime
             Color currentFogColor = ApplyFog(fp, lp);
             ApplySky(sp, cp, mp, fp, currentFogColor);
             ApplyEffects(ep, particleLightColor);
+            ApplyAudio(ap);
+        }
+
+        /**
+         * Dispatches resolved audio parameters and clips to the WeatherAudioManager.
+         *
+         * @param ap Resolved (possibly interpolated) BakedProfileData for the Audio layer.
+         */
+        private void ApplyAudio(BakedProfileData ap)
+        {
+            if (_weatherAudioManager == null || ap == null) return;
+
+            _weatherAudioManager.UpdateAudio(
+                ap.audioEnabled, ap.audioMasterVolume,
+                ap.rainExteriorStereoClip, ap.rainExteriorMonoClip,
+                ap.rainInteriorStereoClip, ap.rainRoofMonoClip,
+                ap.windBaseStereoClip, ap.windGustStereoClip,
+                ap.rainVolume, ap.rainInteriorScale, ap.rainRoofScale, ap.rainPitch,
+                ap.windVolume, ap.windGustStrength, ap.windGustSpeed,
+                ap.windInteriorScale, ap.windPitch,
+                ap.minBunkerScale, ap.acousticSmoothing
+            );
         }
 
         /// <summary>
@@ -726,27 +770,28 @@ namespace BlackHorizon.HorizonWeatherTime
 
                 _skyManager.UpdateNightSky(sp.airglowIntensity, sp.airglowColor, sp.airglowHeight);
 
+                // Fog in skybox
+                if (fp != null)
+                {
+                    _skyManager.UpdateSkyboxFog(fp.fogEnabled, currentFogColor, fp.fogSkyBlend);
+                }
+
                 // Clouds
                 if (cp != null)
                 {
                     _skyManager.UpdateClouds(
                         cp.cloudNoiseTexture, cp.weatherMapTexture, cp.blueNoiseTexture,
                         cp.curlNoiseTexture,
-                        cp.cloudAltitude, cp.cloudScale, cp.cloudCoverage,
-                        cp.cloudDensity, cp.cloudDetailAmount, cp.cloudWispiness,
+                        cp.cloudAltitude, cp.cloudThickness, cp.cloudScale, cp.cloudCoverage,
+                        cp.cloudDensity, cp.cloudDetailAmount, cp.cloudWispiness, cp.cloudCurlStrength,
                         cp.cloudWindSpeed, cp.cloudBaseColor, cp.cloudShadowColor,
-                        cp.cloudLightScattering);
+                        cp.cloudLightScattering, cp.cloudSilverLining, cp.cloudMultiScattering,
+                        cp.cloudAmbientIntensity);
 
                     _skyManager.UpdateCirrus(
                         cp.cirrusNoiseTexture,
                         cp.cirrusCoverage, cp.cirrusOpacity,
                         cp.cirrusScale, cp.cirrusWindSpeed, cp.cirrusTint);
-                }
-
-                // Fog in skybox
-                if (fp != null)
-                {
-                    _skyManager.UpdateSkyboxFog(fp.fogEnabled, currentFogColor, fp.fogSkyBlend);
                 }
             }
 
@@ -864,6 +909,7 @@ namespace BlackHorizon.HorizonWeatherTime
                 case MOD_MOON: return target ? _targetMoonIndex : _moonIndex;
                 case MOD_FOG: return target ? _targetFogIndex : _fogIndex;
                 case MOD_EFFECTS: return target ? _targetEffectsIndex : _effectsIndex;
+                case MOD_AUDIO: return target ? _targetAudioIndex : _audioIndex;
                 default: return 0;
             }
         }
@@ -881,6 +927,7 @@ namespace BlackHorizon.HorizonWeatherTime
                 case MOD_MOON: if (target) _targetMoonIndex = value; else _moonIndex = value; break;
                 case MOD_FOG: if (target) _targetFogIndex = value; else _fogIndex = value; break;
                 case MOD_EFFECTS: if (target) _targetEffectsIndex = value; else _effectsIndex = value; break;
+                case MOD_AUDIO: if (target) _targetAudioIndex = value; else _audioIndex = value; break;
             }
         }
 
@@ -897,6 +944,7 @@ namespace BlackHorizon.HorizonWeatherTime
                 case MOD_MOON: return bakedMoonModules;
                 case MOD_FOG: return bakedFogModules;
                 case MOD_EFFECTS: return bakedEffectsModules;
+                case MOD_AUDIO: return bakedAudioModules;
                 default: return null;
             }
         }
@@ -993,13 +1041,13 @@ namespace BlackHorizon.HorizonWeatherTime
         /// </summary>
         public void TransitionToWeatherProfile(int index, float duration)
         {
-            if (presetToLighting == null || index < 0 || index >= presetToLighting.Length) return;
+            if (presetToLighting == null || presetToAudio == null || index < 0 || index >= presetToLighting.Length) return;
 
             TransitionToModuleStates(
                 presetToLighting[index], presetToSky[index],
                 presetToCloud[index], presetToMoon[index],
                 presetToFog[index], presetToEffects[index],
-                duration
+                presetToAudio[index], duration
             );
         }
 
@@ -1017,9 +1065,15 @@ namespace BlackHorizon.HorizonWeatherTime
         public void TransitionToModuleStates(int lighting, int sky, int cloud,
             int moon, int fog, int effects, float duration)
         {
+            TransitionToModuleStates(lighting, sky, cloud, moon, fog, effects, _targetAudioIndex, duration);
+        }
+
+        public void TransitionToModuleStates(int lighting, int sky, int cloud,
+            int moon, int fog, int effects, int audio, float duration)
+        {
             if (duration <= 0f)
             {
-                SetModuleStates(lighting, sky, cloud, moon, fog, effects);
+                SetModuleStates(lighting, sky, cloud, moon, fog, effects, audio);
                 return;
             }
 
@@ -1029,6 +1083,7 @@ namespace BlackHorizon.HorizonWeatherTime
             TransitionModuleTo(MOD_MOON, moon, duration);
             TransitionModuleTo(MOD_FOG, fog, duration);
             TransitionModuleTo(MOD_EFFECTS, effects, duration);
+            TransitionModuleTo(MOD_AUDIO, audio, duration);
         }
 
         // =========================================================
@@ -1137,15 +1192,20 @@ namespace BlackHorizon.HorizonWeatherTime
             r.cirrusNoiseTexture = t < 0.5f ? a.cirrusNoiseTexture : b.cirrusNoiseTexture;
 
             r.cloudAltitude = Mathf.Lerp(a.cloudAltitude, b.cloudAltitude, t);
+            r.cloudThickness = Mathf.Lerp(a.cloudThickness, b.cloudThickness, t);
             r.cloudScale = Mathf.Lerp(a.cloudScale, b.cloudScale, t);
             r.cloudCoverage = Mathf.Lerp(a.cloudCoverage, b.cloudCoverage, t);
             r.cloudDensity = Mathf.Lerp(a.cloudDensity, b.cloudDensity, t);
             r.cloudDetailAmount = Mathf.Lerp(a.cloudDetailAmount, b.cloudDetailAmount, t);
             r.cloudWispiness = Mathf.Lerp(a.cloudWispiness, b.cloudWispiness, t);
+            r.cloudCurlStrength = Mathf.Lerp(a.cloudCurlStrength, b.cloudCurlStrength, t);
             r.cloudWindSpeed = Vector2.Lerp(a.cloudWindSpeed, b.cloudWindSpeed, t);
             r.cloudBaseColor = Color.Lerp(a.cloudBaseColor, b.cloudBaseColor, t);
             r.cloudShadowColor = Color.Lerp(a.cloudShadowColor, b.cloudShadowColor, t);
             r.cloudLightScattering = Mathf.Lerp(a.cloudLightScattering, b.cloudLightScattering, t);
+            r.cloudSilverLining = Mathf.Lerp(a.cloudSilverLining, b.cloudSilverLining, t);
+            r.cloudMultiScattering = Mathf.Lerp(a.cloudMultiScattering, b.cloudMultiScattering, t);
+            r.cloudAmbientIntensity = Mathf.Lerp(a.cloudAmbientIntensity, b.cloudAmbientIntensity, t);
 
             r.cirrusCoverage = Mathf.Lerp(a.cirrusCoverage, b.cirrusCoverage, t);
             r.cirrusOpacity = Mathf.Lerp(a.cirrusOpacity, b.cirrusOpacity, t);
@@ -1225,6 +1285,46 @@ namespace BlackHorizon.HorizonWeatherTime
             r.volumeBounds = Vector3.Lerp(a.volumeBounds, b.volumeBounds, t);
             r.particleSize = Mathf.Lerp(a.particleSize, b.particleSize, t);
             r.weatherDensity = Mathf.Lerp(a.weatherDensity, b.weatherDensity, t);
+        }
+
+        private BakedProfileData ResolveAudioState(float t)
+        {
+            BakedProfileData from = SafeGet(bakedAudioModules, _audioIndex);
+            if (from == null) return null;
+            if (t <= 0f || _resolvedAudio == null || _audioIndex == _targetAudioIndex) return from;
+
+            BakedProfileData to = SafeGet(bakedAudioModules, _targetAudioIndex);
+            if (to == null) return from;
+
+            LerpAudioFields(_resolvedAudio, from, to, t);
+            return _resolvedAudio;
+        }
+
+        private void LerpAudioFields(BakedProfileData r, BakedProfileData a, BakedProfileData b, float t)
+        {
+            r.audioEnabled = t < 0.5f ? a.audioEnabled : b.audioEnabled;
+            r.audioMasterVolume = Mathf.Lerp(a.audioMasterVolume, b.audioMasterVolume, t);
+
+            r.rainExteriorStereoClip = t < 0.5f ? a.rainExteriorStereoClip : b.rainExteriorStereoClip;
+            r.rainExteriorMonoClip = t < 0.5f ? a.rainExteriorMonoClip : b.rainExteriorMonoClip;
+            r.rainInteriorStereoClip = t < 0.5f ? a.rainInteriorStereoClip : b.rainInteriorStereoClip;
+            r.rainRoofMonoClip = t < 0.5f ? a.rainRoofMonoClip : b.rainRoofMonoClip;
+            r.windBaseStereoClip = t < 0.5f ? a.windBaseStereoClip : b.windBaseStereoClip;
+            r.windGustStereoClip = t < 0.5f ? a.windGustStereoClip : b.windGustStereoClip;
+
+            r.rainVolume = Mathf.Lerp(a.rainVolume, b.rainVolume, t);
+            r.rainInteriorScale = Mathf.Lerp(a.rainInteriorScale, b.rainInteriorScale, t);
+            r.rainRoofScale = Mathf.Lerp(a.rainRoofScale, b.rainRoofScale, t);
+            r.rainPitch = Mathf.Lerp(a.rainPitch, b.rainPitch, t);
+
+            r.windVolume = Mathf.Lerp(a.windVolume, b.windVolume, t);
+            r.windGustStrength = Mathf.Lerp(a.windGustStrength, b.windGustStrength, t);
+            r.windGustSpeed = Mathf.Lerp(a.windGustSpeed, b.windGustSpeed, t);
+            r.windInteriorScale = Mathf.Lerp(a.windInteriorScale, b.windInteriorScale, t);
+            r.windPitch = Mathf.Lerp(a.windPitch, b.windPitch, t);
+
+            r.minBunkerScale = Mathf.Lerp(a.minBunkerScale, b.minBunkerScale, t);
+            r.acousticSmoothing = Mathf.Lerp(a.acousticSmoothing, b.acousticSmoothing, t);
         }
 
 #if !COMPILER_UDONSHARP && UNITY_EDITOR

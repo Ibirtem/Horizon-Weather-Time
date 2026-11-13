@@ -1,0 +1,33 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: eac724f7453df54438554220c6e4d05f, type: 3}
+  m_Name: Audio_Clear
+  m_EditorClassIdentifier: 
+  enabled: 1
+  masterVolume: 1
+  rainExteriorStereoClip: {fileID: 0}
+  rainExteriorMonoClip: {fileID: 0}
+  rainInteriorStereoClip: {fileID: 0}
+  rainRoofMonoClip: {fileID: 0}
+  windBaseStereoClip: {fileID: 0}
+  windGustStereoClip: {fileID: 0}
+  rainVolume: 0
+  rainInteriorScale: 0.45
+  rainRoofScale: 0.65
+  rainPitch: 1
+  windVolume: 0.18
+  windGustStrength: 0.2
+  windGustSpeed: 0.25
+  windInteriorScale: 0.25
+  windPitch: 1
+  minBunkerScale: 0.05
+  acousticSmoothing: 3.5

@@ -19,6 +19,10 @@ namespace BlackHorizon.HorizonWeatherTime
         public bool enabled = true;
         public Texture3D cloudNoiseTexture;
 
+        [Tooltip("Vertical thickness of the cloud layer in meters.")]
+        [Range(500f, 6000f)]
+        public float thickness = 2500f;
+
         [Tooltip("How high the cloud layer appears. Affects perspective.")]
         [Range(1f, 10f)]
         public float altitude = 2.0f;
@@ -44,6 +48,10 @@ namespace BlackHorizon.HorizonWeatherTime
         [Range(0f, 1f)]
         public float wispiness = 0.1f;
 
+        [Tooltip("Strength of curl turbulence warping cloud edges.")]
+        [Range(0f, 0.25f)]
+        public float curlStrength = 0.07f;
+
         [Tooltip("Wind speed and direction.")]
         public Vector2 windSpeed = new Vector2(0.002f, 0.001f);
 
@@ -53,6 +61,18 @@ namespace BlackHorizon.HorizonWeatherTime
 
         [ColorUsage(true, true)]
         public Color shadowColor = new Color(0.35f, 0.4f, 0.5f);
+
+        [Tooltip("Forward sun scattering intensity (silver lining) around cloud edges.")]
+        [Range(0f, 2.5f)]
+        public float silverLining = 1.0f;
+
+        [Tooltip("Multi-scattering energy retention inside dense clouds (higher = fluffier/whiter).")]
+        [Range(0f, 1.5f)]
+        public float multiScattering = 1.0f;
+
+        [Tooltip("Sky ambient fill intensity on the shadowed side of clouds.")]
+        [Range(0f, 2f)]
+        public float ambientIntensity = 1.0f;
 
         [Tooltip("How much light is scattered through the cloud (makes them brighter).")]
         [Range(0f, 5f)]

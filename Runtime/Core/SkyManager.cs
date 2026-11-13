@@ -243,6 +243,8 @@ namespace BlackHorizon.HorizonWeatherTime
         private float _currentTurbidity = 2.5f;
         private float _currentMieCoeff = 0.005f;
         private float _currentMieG = 0.76f;
+        private Color _currentFogColor = Color.gray;
+        private float _currentFogBlend = 0f;
 
         public void UpdateSky(Vector3 sunDirection, float rayleigh, float turbidity, float mieCoeff, float mieG, float exposure)
         {
@@ -336,7 +338,15 @@ namespace BlackHorizon.HorizonWeatherTime
 #endif
         }
 
-        public void UpdateClouds(Texture3D cloudTex, Texture weatherMapTex, Texture blueNoiseTex, Texture2D curlNoiseTex, float altitude, float scale, float coverage, float density, float detail, float wisp, Vector2 windSpeed, Color baseColor, Color shadowColor, float scatter)
+        /**
+         * Updates skybox cloud properties and forwards complete atmosphere/fog context to HorizonCloudVolume.
+         */
+        public void UpdateClouds(
+            Texture3D cloudTex, Texture weatherMapTex, Texture blueNoiseTex, Texture2D curlNoiseTex,
+            float altitude, float thickness, float scale, float coverage, float density,
+            float detail, float wisp, float curlStrength, Vector2 windSpeed,
+            Color baseColor, Color shadowColor, float scatter,
+            float silverLining, float multiScattering, float ambientIntensity)
         {
             EnsureInitialized();
             if (_skyboxInstance == null) return;
@@ -357,9 +367,6 @@ namespace BlackHorizon.HorizonWeatherTime
             if (weatherMapTex != null) _skyboxInstance.SetTexture(WeatherMapTexID, weatherMapTex);
             if (blueNoiseTex != null) _skyboxInstance.SetTexture(BlueNoiseTexID, blueNoiseTex);
 
-            // TODO
-            // Every 27.7 hours, a cycle occurs, ending with a 0.04 UV jump.
-            // It's unnoticeable and not critical, but it's worth remembering to do something about it.
             double utcSec = GetUtcSeconds();
             double rawX = (utcSec * (double)windSpeed.x) % 100.0;
             if (rawX < 0.0) rawX += 100.0;
@@ -383,7 +390,6 @@ namespace BlackHorizon.HorizonWeatherTime
             _skyboxInstance.SetColor(CloudShadowColorID, shadowColor);
             _skyboxInstance.SetFloat(CloudScatterID, scatter);
 
-            // Forward complete context to world cloud volume (including exposure and moon)
             if (worldCloudVolume != null)
             {
                 Vector3 sunDirection = _skyboxInstance.GetVector(SunPositionID);
@@ -392,11 +398,12 @@ namespace BlackHorizon.HorizonWeatherTime
 
                 worldCloudVolume.UpdateClouds(
                     cloudTex, weatherMapTex, blueNoiseTex, curlNoiseTex,
-                    altitude, scale, coverage, density, detail, wisp,
+                    altitude, thickness, scale, coverage, density, detail, wisp, curlStrength,
                     _currentCloudOffset, cloudTime,
-                    baseColor, shadowColor, scatter,
+                    baseColor, shadowColor, scatter, silverLining, multiScattering, ambientIntensity,
                     sunDirection, moonDirection, moonColor,
-                    _currentRayleigh, _currentTurbidity, _currentMieCoeff, _currentMieG, transmittanceLUT);
+                    _currentRayleigh, _currentTurbidity, _currentMieCoeff, _currentMieG,
+                    _currentExposure, _currentFogColor, _currentFogBlend, transmittanceLUT);
             }
 
 #if !COMPILER_UDONSHARP && UNITY_EDITOR
@@ -487,23 +494,19 @@ namespace BlackHorizon.HorizonWeatherTime
 #endif
         }
 
-        /// <summary>
-        /// Updates the procedural skybox to seamlessly blend with the Unity global fog.
-        /// </summary>
+        /**
+         * Updates skybox horizon fog parameters and caches them for world-space clouds.
+         */
         public void UpdateSkyboxFog(bool isEnabled, Color fogColor, float blendAmount)
         {
             EnsureInitialized();
             if (_skyboxInstance == null) return;
 
-            if (isEnabled)
-            {
-                _skyboxInstance.SetColor(FogColorID, fogColor);
-                _skyboxInstance.SetFloat(FogBlendID, blendAmount);
-            }
-            else
-            {
-                _skyboxInstance.SetFloat(FogBlendID, 0f);
-            }
+            _currentFogColor = fogColor;
+            _currentFogBlend = isEnabled ? blendAmount : 0f;
+
+            _skyboxInstance.SetColor(FogColorID, fogColor);
+            _skyboxInstance.SetFloat(FogBlendID, _currentFogBlend);
         }
 
         /// <summary>

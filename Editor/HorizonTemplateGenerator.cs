@@ -79,8 +79,16 @@ namespace BlackHorizon.HorizonWeatherTime
             var eClear = CreateModule<EffectsProfile>(
                 "Effects", "Effects_Clear", force);
 
+            var aClear = CreateModule<AudioProfile>(
+                "Audio", "Audio_Clear", force, ap =>
+                {
+                    ap.rainVolume = 0.0f;
+                    ap.windVolume = 0.18f;
+                    ap.windGustStrength = 0.2f;
+                });
+
             CreatePreset("Template_Clear", "Clear", force,
-                lClear, sClear, cClear, moonDefault, fClear, eClear);
+                lClear, sClear, cClear, moonDefault, fClear, eClear, aClear);
 
             // -----------------------------------------------------------
             // RAIN
@@ -114,8 +122,16 @@ namespace BlackHorizon.HorizonWeatherTime
                     TryAssignPrefab(ep, "RainEffect");
                 });
 
+            var aRain = CreateModule<AudioProfile>(
+                "Audio", "Audio_Rain", force, ap =>
+                {
+                    ap.rainVolume = 0.8f;
+                    ap.windVolume = 0.45f;
+                    ap.windGustStrength = 0.55f;
+                });
+
             CreatePreset("Template_Rain", "Rain", force,
-                lRain, skyOvercast, cStorm, moonDefault, fRain, eRain);
+                lRain, skyOvercast, cStorm, moonDefault, fRain, eRain, aRain);
 
             // -----------------------------------------------------------
             // SNOW
@@ -142,8 +158,17 @@ namespace BlackHorizon.HorizonWeatherTime
                     TryAssignPrefab(ep, "SnowEffect");
                 });
 
+            var aSnow = CreateModule<AudioProfile>(
+                "Audio", "Audio_Snow", force, ap =>
+                {
+                    ap.rainVolume = 0.0f;
+                    ap.windVolume = 0.35f;
+                    ap.windGustStrength = 0.45f;
+                    ap.windPitch = 0.9f;
+                });
+
             CreatePreset("Template_Snow", "Snow", force,
-                lSnow, skyOvercast, cOvercast, moonDefault, fSnow, eSnow);
+                lSnow, skyOvercast, cOvercast, moonDefault, fSnow, eSnow, aSnow);
 
             // -----------------------------------------------------------
             // FINALIZE
@@ -212,12 +237,20 @@ namespace BlackHorizon.HorizonWeatherTime
         /// </summary>
         private static void CreatePreset(string name, string displayName, bool force,
             LightingProfile lp, SkyProfile sp, CloudProfile cp,
-            MoonProfile mp, FogProfile fp, EffectsProfile ep)
+            MoonProfile mp, FogProfile fp, EffectsProfile ep, AudioProfile ap)
         {
             string path = $"{PRESETS_DIR}/{name}.asset";
             WeatherProfile existing = AssetDatabase.LoadAssetAtPath<WeatherProfile>(path);
 
-            if (existing != null && !force) return;
+            if (existing != null && !force)
+            {
+                if (existing.audioProfile == null && ap != null)
+                {
+                    existing.audioProfile = ap;
+                    EditorUtility.SetDirty(existing);
+                }
+                return;
+            }
 
             WeatherProfile preset = existing;
             if (preset == null)
@@ -233,6 +266,8 @@ namespace BlackHorizon.HorizonWeatherTime
             preset.moonProfile = mp;
             preset.fogProfile = fp;
             preset.effectsProfile = ep;
+            preset.audioProfile = ap;
+
             EditorUtility.SetDirty(preset);
         }
 
@@ -259,7 +294,8 @@ namespace BlackHorizon.HorizonWeatherTime
                 $"{MODULES_DIR}/Clouds",
                 $"{MODULES_DIR}/Moon",
                 $"{MODULES_DIR}/Fog",
-                $"{MODULES_DIR}/Effects"
+                $"{MODULES_DIR}/Effects",
+                $"{MODULES_DIR}/Audio"
             };
 
             foreach (var dir in dirs)
@@ -317,6 +353,31 @@ namespace BlackHorizon.HorizonWeatherTime
                     mp.moonTexture = moonTex;
                     EditorUtility.SetDirty(mp);
                 }
+            }
+
+            // --- AUDIO CLIPS ---
+            var rainExtStereo = AssetDatabase.LoadAssetAtPath<AudioClip>(WeatherAudioGenerator.RAIN_EXT_STEREO_PATH);
+            var rainExtMono   = AssetDatabase.LoadAssetAtPath<AudioClip>(WeatherAudioGenerator.RAIN_EXT_MONO_PATH);
+            var rainIntStereo = AssetDatabase.LoadAssetAtPath<AudioClip>(WeatherAudioGenerator.RAIN_INT_STEREO_PATH);
+            var rainRoofMono  = AssetDatabase.LoadAssetAtPath<AudioClip>(WeatherAudioGenerator.RAIN_ROOF_MONO_PATH);
+            var windBase      = AssetDatabase.LoadAssetAtPath<AudioClip>(WeatherAudioGenerator.WIND_BASE_STEREO_PATH);
+            var windGust      = AssetDatabase.LoadAssetAtPath<AudioClip>(WeatherAudioGenerator.WIND_GUST_STEREO_PATH);
+
+            string[] audioGuids = AssetDatabase.FindAssets("t:AudioProfile", new[] { $"{MODULES_DIR}/Audio" });
+            foreach (string guid in audioGuids)
+            {
+                string path = AssetDatabase.GUIDToAssetPath(guid);
+                AudioProfile ap = AssetDatabase.LoadAssetAtPath<AudioProfile>(path);
+                if (ap == null) continue;
+
+                bool dirty = false;
+                if (ap.rainExteriorStereoClip == null && rainExtStereo != null) { ap.rainExteriorStereoClip = rainExtStereo; dirty = true; }
+                if (ap.rainExteriorMonoClip == null && rainExtMono != null) { ap.rainExteriorMonoClip = rainExtMono; dirty = true; }
+                if (ap.rainInteriorStereoClip == null && rainIntStereo != null) { ap.rainInteriorStereoClip = rainIntStereo; dirty = true; }
+                if (ap.rainRoofMonoClip == null && rainRoofMono != null) { ap.rainRoofMonoClip = rainRoofMono; dirty = true; }
+                if (ap.windBaseStereoClip == null && windBase != null) { ap.windBaseStereoClip = windBase; dirty = true; }
+                if (ap.windGustStereoClip == null && windGust != null) { ap.windGustStereoClip = windGust; dirty = true; }
+                if (dirty) EditorUtility.SetDirty(ap);
             }
         }
 

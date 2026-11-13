@@ -101,4 +101,15 @@ namespace BlackHorizon.HorizonWeatherTime
             if (EditorGUI.EndChangeCheck()) ProfileUpdateHelper.ForceUpdate();
         }
     }
+
+    [CustomEditor(typeof(AudioProfile))]
+    public class AudioProfileEditor : Editor
+    {
+        public override void OnInspectorGUI()
+        {
+            EditorGUI.BeginChangeCheck();
+            base.OnInspectorGUI();
+            if (EditorGUI.EndChangeCheck()) ProfileUpdateHelper.ForceUpdate();
+        }
+    }
 }

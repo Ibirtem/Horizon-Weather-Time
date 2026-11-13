@@ -19,3 +19,4 @@ MonoBehaviour:
   moonProfile: {fileID: 11400000, guid: 41a3191b75a750c47829749186b9366e, type: 2}
   fogProfile: {fileID: 11400000, guid: 9c5a4ea9de17d7a48a5eea01914ce902, type: 2}
   effectsProfile: {fileID: 11400000, guid: 86328fb6fcdf7ab43977769ad0dca3b7, type: 2}
+  audioProfile: {fileID: 11400000, guid: 511afc6d37729344d95e021f15fd6177, type: 2}

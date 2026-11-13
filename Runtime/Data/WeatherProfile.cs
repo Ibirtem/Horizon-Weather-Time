@@ -40,6 +40,9 @@ namespace BlackHorizon.HorizonWeatherTime
 
         [Tooltip("Controls particle systems like rain or snow.")]
         public EffectsProfile effectsProfile;
+        
+        [Tooltip("Controls ambient weather audio (rain, roof patter, wind).")]
+        public AudioProfile audioProfile;
 
         private void OnValidate()
         {
