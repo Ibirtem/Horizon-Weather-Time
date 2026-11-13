@@ -769,6 +769,7 @@ namespace BlackHorizon.HorizonWeatherTime
             ScanAndSyncProfiles();
 
             CheckAndConfigureSkyboxMaterial();
+            CheckAndConfigureCloudVolume();
             CheckAndConfigureParticleAssets();
             CheckAndConfigureOcclusionCamera();
             CheckSkyManagerInternalTextures();
@@ -846,6 +847,33 @@ namespace BlackHorizon.HorizonWeatherTime
             EditorUtility.SetDirty(preset);
 
             return preset;
+        }
+
+        private void CheckAndConfigureCloudVolume()
+        {
+            if (_skyManagerProp.objectReferenceValue == null) return;
+            SkyManager skyManager = (SkyManager)_skyManagerProp.objectReferenceValue;
+
+            HorizonCloudVolume cloudVolume = skyManager.worldCloudVolume;
+            if (cloudVolume == null)
+            {
+                cloudVolume = _target.GetComponentInChildren<HorizonCloudVolume>();
+                if (cloudVolume == null)
+                {
+                    GameObject cloudObj = new GameObject("World Cloud Volume");
+                    cloudObj.transform.SetParent(_target.transform);
+                    cloudObj.transform.localPosition = Vector3.zero;
+                    cloudVolume = cloudObj.AddComponent<HorizonCloudVolume>();
+                }
+
+                skyManager.worldCloudVolume = cloudVolume;
+                EditorUtility.SetDirty(skyManager);
+            }
+
+            if (cloudVolume != null)
+            {
+                cloudVolume.EnsureVolumeRenderer();
+            }
         }
 
         /// <summary>

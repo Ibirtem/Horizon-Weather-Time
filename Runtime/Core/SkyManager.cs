@@ -15,6 +15,10 @@ namespace BlackHorizon.HorizonWeatherTime
     public class SkyManager : MonoBehaviour
 #endif
     {
+        [Header("World Space Clouds (Experimental)")]
+        [Tooltip("Optional in-world volumetric cloud container.")]
+        public HorizonCloudVolume worldCloudVolume;
+
         [Header("Configuration")]
         [Tooltip("The base material asset for the skybox.")]
         public Material skyboxMaterial;
@@ -234,8 +238,20 @@ namespace BlackHorizon.HorizonWeatherTime
             return (now - epoch).TotalSeconds;
         }
 
+        private float _currentExposure = 15.0f;
+        private float _currentRayleigh = 1.0f;
+        private float _currentTurbidity = 2.5f;
+        private float _currentMieCoeff = 0.005f;
+        private float _currentMieG = 0.76f;
+
         public void UpdateSky(Vector3 sunDirection, float rayleigh, float turbidity, float mieCoeff, float mieG, float exposure)
         {
+            _currentExposure = exposure;
+            _currentRayleigh = rayleigh;
+            _currentTurbidity = turbidity;
+            _currentMieCoeff = mieCoeff;
+            _currentMieG = mieG;
+            
             EnsureInitialized();
             if (_skyboxInstance == null) return;
             if (RenderSettings.skybox != _skyboxInstance) RenderSettings.skybox = _skyboxInstance;
@@ -367,9 +383,77 @@ namespace BlackHorizon.HorizonWeatherTime
             _skyboxInstance.SetColor(CloudShadowColorID, shadowColor);
             _skyboxInstance.SetFloat(CloudScatterID, scatter);
 
+            // Forward complete context to world cloud volume (including exposure and moon)
+            if (worldCloudVolume != null)
+            {
+                Vector3 sunDirection = _skyboxInstance.GetVector(SunPositionID);
+                Vector3 moonDirection = _skyboxInstance.GetVector(MoonPositionID);
+                Color moonColor = _skyboxInstance.GetColor(MoonColorID);
+
+                worldCloudVolume.UpdateClouds(
+                    cloudTex, weatherMapTex, blueNoiseTex, curlNoiseTex,
+                    altitude, scale, coverage, density, detail, wisp,
+                    _currentCloudOffset, cloudTime,
+                    baseColor, shadowColor, scatter,
+                    sunDirection, moonDirection, moonColor,
+                    _currentRayleigh, _currentTurbidity, _currentMieCoeff, _currentMieG, transmittanceLUT);
+            }
+
 #if !COMPILER_UDONSHARP && UNITY_EDITOR
             SyncAssetTextures();
 #endif
+        }
+
+        private Color ComputeAtmosphereTintForClouds(Vector3 sunDirection)
+        {
+            Color ambientSky = RenderSettings.ambientSkyColor;
+            float sunHeight = sunDirection.y;
+
+            // 1. Затемнение неба (в точности как в оригинальном скайбоксе)
+            float nightDarkening = Mathf.Clamp01(sunHeight * 1.0f + 1.0f);
+            nightDarkening = nightDarkening * nightDarkening;
+
+            // 2. Фактор заката (плавно появляется у горизонта и исчезает при уходе солнца)
+            float aboveFactor = Mathf.Clamp01(sunHeight / 0.2f);
+            float belowFactor = Mathf.Clamp01(-sunHeight / 0.1f);
+            float sunsetFactor = (1.0f - aboveFactor) * (1.0f - belowFactor);
+            sunsetFactor = Mathf.Pow(sunsetFactor, 1.5f);
+
+            // 3. Закатный цвет берем от базового эмбиента, а не хардкодим яркость 1.0
+            Color warmTint = new Color(1.0f, 0.6f, 0.3f);
+            Color sunsetAmbient = ambientSky * warmTint * 1.5f;
+
+            // 4. Смешиваем и применяем ночное затемнение
+            Color tint = Color.Lerp(ambientSky, sunsetAmbient, sunsetFactor);
+            tint *= nightDarkening;
+            
+            tint.a = 1.0f;
+            return tint;
+        }
+
+        private Color ComputeSkyTint(float sunHeight)
+        {
+            Color sky = RenderSettings.ambientSkyColor;
+            float nightDarkening = Mathf.Clamp01(sunHeight * 1.0f + 1.0f);
+            nightDarkening *= nightDarkening;
+            return sky * nightDarkening;
+        }
+
+        private Color ComputeEquatorTint(float sunHeight)
+        {
+            Color eq = RenderSettings.ambientEquatorColor;
+            
+            // Окно заката (солнце от +0.3 до -0.1)
+            float sunsetFactor = Mathf.Clamp01(1.0f - sunHeight * 3.0f);
+            sunsetFactor = Mathf.Pow(sunsetFactor, 1.5f);
+            
+            // Закатный оранжевый в LDR (не пересвеченный)
+            Color sunsetEq = new Color(0.8f, 0.25f, 0.05f);
+            eq = Color.Lerp(eq, sunsetEq, sunsetFactor);
+
+            float nightDarkening = Mathf.Clamp01(sunHeight * 1.0f + 1.0f);
+            nightDarkening *= nightDarkening;
+            return eq * nightDarkening;
         }
 
         public void UpdateCirrus(Texture cirrusTex, float coverage, float opacity, float scale, Vector2 windSpeed, Color tint)

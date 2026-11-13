@@ -70,6 +70,7 @@ Shader "Horizon/Procedural Skybox"
 
         [Header(Optimization)]
         [NoScaleOffset] _TransmittanceLUT ("Transmittance LUT", 2D) = "white" {}
+        [Toggle(_ENABLE_SKYBOX_CLOUDS)] _EnableSkyboxClouds ("Enable Skybox Volumetric Clouds", Float) = 0
     }
 
     SubShader
@@ -83,6 +84,7 @@ Shader "Horizon/Procedural Skybox"
             #pragma vertex vert
             #pragma fragment frag
             #pragma target 3.0
+            #pragma shader_feature_local _ENABLE_SKYBOX_CLOUDS
 
             #include "UnityCG.cginc"
 
@@ -1109,6 +1111,7 @@ Shader "Horizon/Procedural Skybox"
                 //  New moon (sun same side): dot ≈ +1 → phaseBrightness ≈ 0.0
                 // =============================================================
 
+                #if defined(_ENABLE_SKYBOX_CLOUDS)
                 if (direction.y > 0.005)
                 {
                     float cloudBottomRad = CLOUD_PLANET_RADIUS + (_CloudAltitude * 1000.0);
@@ -1393,6 +1396,7 @@ Shader "Horizon/Procedural Skybox"
                         }
                     }
                 }
+                #endif
 
                 // =============================================================
                 //  5. TONE MAPPING (ACES Filmic Approximation)
