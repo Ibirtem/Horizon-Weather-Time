@@ -2,7 +2,9 @@
 
 > ⚠️ **WIP / HEAVY ALPHA:** This system is currently in early, active development. Features are highly experimental, and the architecture may shift as things evolve. Expect bugs, but also expect rapid improvements!
 
-![Sky Preview](Documentation~/Images/sky_preview.png)
+![Sky Preview](Documentation~/Images/day_sky_preview.png)
+![Sky Preview](Documentation~/Images/twilight_sky_preview.png)
+![Sky Preview](Documentation~/Images/night_sky_preview.png)
 
 **A feature-rich environment, weather, and time-of-day system for Unity & VRChat.**
 
