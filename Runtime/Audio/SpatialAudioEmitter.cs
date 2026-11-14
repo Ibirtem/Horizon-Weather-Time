@@ -295,26 +295,31 @@ namespace BlackHorizon.HorizonWeatherTime
             bool allowAudio, bool moveTransform,
             float conditionFactor, Vector3 openingDirection, float openingDepth, float ceilingHeight)
         {
-            EnsureSource();
+            if (_source == null) EnsureSource();
 
             _conditionFactor = Mathf.Clamp01(conditionFactor);
             _resolvedPosition = ResolvePosition(listenerPosition, openingDirection, openingDepth, ceilingHeight);
             _resolvedDistance = (listenerPosition - _resolvedPosition).magnitude;
 
-            _distanceGain = 1f;
-            if (useDistanceAttenuation && spatialBlend > 0.01f)
-            {
-                _distanceGain = EvaluateDistanceGain(_resolvedDistance);
-            }
+            bool is3D = spatialBlend > 0.01f;
+            _distanceGain = (useDistanceAttenuation && is3D) ? EvaluateDistanceGain(_resolvedDistance) : 1f;
 
             if (moveTransform && spatialBlend > 0.001f && placement != SpatialAudioPlacementMode.FixedWorld)
             {
-                transform.position = _resolvedPosition;
+                if ((_resolvedPosition - transform.position).sqrMagnitude > 0.0001f)
+                {
+                    transform.position = _resolvedPosition;
+                }
             }
 
-            float environmentGain = _externallyDriven
-                ? 1f
-                : Mathf.Lerp(minimumGain, 1f, Mathf.Pow(_conditionFactor, Mathf.Max(0.01f, responseSharpness)));
+            float environmentGain = 1f;
+            if (!_externallyDriven)
+            {
+                float shaped = Mathf.Approximately(responseSharpness, 1f)
+                    ? _conditionFactor
+                    : Mathf.Pow(_conditionFactor, Mathf.Max(0.01f, responseSharpness));
+                environmentGain = Mathf.Lerp(minimumGain, 1f, shaped);
+            }
 
             float baseVolume = _externallyDriven ? _externalVolume : volume;
             float target = Mathf.Clamp01(baseVolume * environmentGain * _distanceGain * masterVolume);
@@ -327,7 +332,6 @@ namespace BlackHorizon.HorizonWeatherTime
             }
             else
             {
-                // In visual-only mode show the resolved target immediately.
                 _currentVolume = target;
             }
 
@@ -436,6 +440,11 @@ namespace BlackHorizon.HorizonWeatherTime
             }
 
             float clampedVolume = Mathf.Clamp01(playVolume);
+
+            // A tiny non-zero floor keeps looped sources alive in systems that cull zero-volume voices.
+            float targetVol = loop ? Mathf.Max(0.0001f, clampedVolume) : clampedVolume;
+            if (Mathf.Abs(_source.volume - targetVol) > 0.0002f) _source.volume = targetVol;
+            if (Mathf.Abs(_source.pitch - playPitch) > 0.0005f) _source.pitch = playPitch;
 
             // A tiny non-zero floor keeps looped sources alive in systems that cull
             // zero-volume voices. It is about -80 dB, effectively silent.

@@ -27,6 +27,7 @@ namespace BlackHorizon.HorizonWeatherTime
         private SerializedProperty _openingProbesPerFrameProp;
         private SerializedProperty _visualizerRangeProp;
         private SerializedProperty _showProbeRaysProp;
+        private SerializedProperty _maxWallThicknessProp;
 
         private bool _showEnvironment = true;
         private bool _showSettings = false;
@@ -59,6 +60,7 @@ namespace BlackHorizon.HorizonWeatherTime
             _openingProbesPerFrameProp = serializedObject.FindProperty("openingProbesPerFrame");
             _visualizerRangeProp = serializedObject.FindProperty("visualizerRange");
             _showProbeRaysProp = serializedObject.FindProperty("showProbeRaysInSceneView");
+            _maxWallThicknessProp = serializedObject.FindProperty("maxWallThickness");
 
             if (!Application.isPlaying)
             {
@@ -239,6 +241,7 @@ namespace BlackHorizon.HorizonWeatherTime
             EditorGUILayout.PropertyField(_acousticSmoothingProp, new GUIContent("Acoustic Smoothing"));
             EditorGUILayout.PropertyField(_roofSmoothingProp, new GUIContent("Roof Smoothing"));
             EditorGUILayout.PropertyField(_minimumIndoorGainProp, new GUIContent("Minimum Indoor Gain"));
+            EditorGUILayout.PropertyField(_maxWallThicknessProp, new GUIContent("Max Wall Thickness"));
             EditorGUILayout.PropertyField(_openingProbeDistanceProp, new GUIContent("Opening Probe Distance"));
             EditorGUILayout.PropertyField(_openingProbesPerFrameProp, new GUIContent("Opening Probes Per Frame"));
 

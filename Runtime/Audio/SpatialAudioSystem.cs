@@ -62,9 +62,13 @@ namespace BlackHorizon.HorizonWeatherTime
         [Tooltip("Distance beyond Single Roof Thickness over which the roof patter fades to silence instead of cutting off. Larger = longer fade; 0 = hard cutoff.")]
         public float roofThicknessFalloff = 2.0f;
 
-        [Range(1, 14)]
+        [Range(1, 30)]
         [Tooltip("Raycasts executed per frame. Lower is cheaper, higher reacts faster.")]
-        public int probesPerFrame = 2;
+        public int probesPerFrame = 4;
+
+        [Min(0.1f)]
+        [Tooltip("Wall thickness (meters) at which exterior sound transmission drops to Minimum Indoor Gain.")]
+        public float maxWallThickness = 2.5f;
 
         [Tooltip("Layers treated as acoustic geometry. IgnoreRaycast, UI, player, and mirror layers are excluded by default.")]
         public int occluderMask = ~((1 << 2) | (1 << 5) | (1 << 9) | (1 << 10) | (1 << 18));
@@ -100,17 +104,15 @@ namespace BlackHorizon.HorizonWeatherTime
 
         // ---------------------------------------------------------------
         // Probe layout
-        // 0: zenith, 1..4: 45-degree sky cone, 5: sky-down roof check,
-        // 6..9: cardinal walls, 10..13: outside-wall sky checks.
+        // 0..3: 45-degree sky cone, 4: zenith, 5: sky-down roof check,
+        // 6..29: 24 horizontal sectors (15-degree resolution).
         // ---------------------------------------------------------------
 
-        private const int TOTAL_PROBES = 14;
+        private const int SECTOR_COUNT = 24;
+        private const int TOTAL_PROBES = 6 + SECTOR_COUNT;
         private int _probeCursor = 0;
 
-        private const int OPENING_PROBE_STEPS = 6;
-        private const int OPENING_CEILING_PROBES = 24;
-        private const int OPENING_LINTEL_PROBES = 4;
-        private const int OPENING_PROBE_TOTAL = OPENING_CEILING_PROBES + OPENING_LINTEL_PROBES;
+        private const int OPENING_PROBE_STEPS = 4;
         private int _openingProbeCursor = 0;
 
         private float _zenithOpen = 1f;
@@ -120,14 +122,15 @@ namespace BlackHorizon.HorizonWeatherTime
         private float _topRoofY = 0f;
 
         private float[] _coneOpen;
-        private float[] _sideOpen;
-        private float[] _sideWallDist;
-        private float[] _outsideSkyExposed;
+        private Vector3[] _sectorDirs;
+        private float[] _sectorRawOpen;
+        private float[] _sectorOpen;
+        private float[] _sectorWallDist;
+        private float[] _sectorWallTransmission;
+        private float[] _sectorEdgeDist;
         private float[] _openingStepOpen;
-        private float[] _sideLintelDist;
 
         private Vector3[] _coneDirs;
-        private Vector3[] _cardinalDirs;
 
         // Debug copies for visualizers.
         private Vector3[] _probeOrigins;
@@ -142,6 +145,7 @@ namespace BlackHorizon.HorizonWeatherTime
         private float _smoothRoofExposed = 0f;
         private float _smoothOpeningAsymmetry = 0f;
         private Vector3 _smoothOpenDir = Vector3.forward;
+        private Vector3 _openingProbeDir = Vector3.forward;
 
         private float _openingDepth = 0f;
         private float _openingProximity = 1f;
@@ -193,13 +197,17 @@ namespace BlackHorizon.HorizonWeatherTime
             RefreshEmitterCache();
         }
 
+        public int SectorCount { get { return SECTOR_COUNT; } }
+
         private void ValidateSettings()
         {
             if (!(acousticSmoothing > 0.01f)) acousticSmoothing = 3.5f;
             if (!(openingProbeDistance > 1f)) openingProbeDistance = 12f;
+            if (probesPerFrame <= 0) probesPerFrame = 4;
             if (openingProbesPerFrame <= 0) openingProbesPerFrame = 2;
             if (!(roofSmoothing > 0.01f)) roofSmoothing = 1.5f;
             if (!(roofThicknessFalloff > 0f)) roofThicknessFalloff = 2f;
+            if (!(maxWallThickness > 0.1f)) maxWallThickness = 2.5f;
         }
 
         private void OnDisable()
@@ -340,9 +348,11 @@ namespace BlackHorizon.HorizonWeatherTime
 
             if (enableAcousticProbes)
             {
+                _probeCursor = 0;
+                _openingProbeCursor = 0;
                 StepAcousticProbes(TOTAL_PROBES);
-                StepOpeningDepthProbes(OPENING_PROBE_TOTAL);
                 EvaluateEnvironment(1f);
+                StepOpeningDepthProbes(OPENING_PROBE_STEPS);
                 EvaluateOpeningDepth(1f);
             }
             else
@@ -394,22 +404,29 @@ namespace BlackHorizon.HorizonWeatherTime
             if (_initialized) return;
 
             _coneOpen = new float[4] { 1f, 1f, 1f, 1f };
-            _sideOpen = new float[4] { 1f, 1f, 1f, 1f };
-            _sideWallDist = new float[4] { lateralProbeDistance, lateralProbeDistance, lateralProbeDistance, lateralProbeDistance };
-            _outsideSkyExposed = new float[4] { 1f, 1f, 1f, 1f };
 
-            _openingStepOpen = new float[OPENING_PROBE_TOTAL];
-            _sideLintelDist = new float[4];
+            _sectorDirs = new Vector3[SECTOR_COUNT];
+            _sectorRawOpen = new float[SECTOR_COUNT];
+            _sectorOpen = new float[SECTOR_COUNT];
+            _sectorWallDist = new float[SECTOR_COUNT];
+            _sectorWallTransmission = new float[SECTOR_COUNT];
+            _sectorEdgeDist = new float[SECTOR_COUNT];
+
+            float stepRad = (Mathf.PI * 2f) / SECTOR_COUNT;
+            for (int k = 0; k < SECTOR_COUNT; k++)
+            {
+                float rad = k * stepRad;
+                _sectorDirs[k] = new Vector3(Mathf.Sin(rad), 0f, Mathf.Cos(rad));
+                _sectorRawOpen[k] = 1f;
+                _sectorOpen[k] = 1f;
+                _sectorWallDist[k] = lateralProbeDistance;
+                _sectorWallTransmission[k] = 1f;
+                _sectorEdgeDist[k] = openingProbeDistance;
+            }
+
+            _openingStepOpen = new float[OPENING_PROBE_STEPS];
             _openingDepth = openingProbeDistance;
             _openingProximity = 0f;
-
-            _cardinalDirs = new Vector3[4]
-            {
-                Vector3.forward,
-                Vector3.right,
-                Vector3.back,
-                Vector3.left
-            };
 
             const float invSqrt2 = 0.70710678f;
             _coneDirs = new Vector3[4]
@@ -450,44 +467,34 @@ namespace BlackHorizon.HorizonWeatherTime
                 _probeCursor = (_probeCursor + 1) % TOTAL_PROBES;
 
                 _probeOrigins[idx] = origin;
-                _probeEnds[idx] = origin;
-                _probeOpen[idx] = 0f;
-                _probeKinds[idx] = 0;
 
-                if (idx == 0)
+                if (idx < 4)
                 {
-                    _probeKinds[idx] = (int)SpatialAudioProbeKind.Zenith;
-
-                    if (Physics.Raycast(origin, Vector3.up, out hit, upDistance, occluderMask, QueryTriggerInteraction.Ignore))
-                    {
-                        _zenithOpen = 0f;
-                        _hasCeiling = true;
-                        _ceilingY = hit.point.y;
-                        _probeEnds[idx] = hit.point;
-                    }
-                    else
-                    {
-                        _zenithOpen = 1f;
-                        _hasCeiling = false;
-                        _ceilingY = origin.y + upDistance;
-                        _probeEnds[idx] = origin + Vector3.up * upDistance;
-                    }
-
-                    _probeOpen[idx] = _zenithOpen;
-                }
-                else if (idx >= 1 && idx <= 4)
-                {
-                    int c = idx - 1;
                     _probeKinds[idx] = (int)SpatialAudioProbeKind.SkyCone;
 
-                    bool blocked = Physics.Raycast(origin, _coneDirs[c], out hit, upDistance, occluderMask, QueryTriggerInteraction.Ignore);
-                    _coneOpen[c] = blocked ? 0f : 1f;
-                    _probeOpen[idx] = _coneOpen[c];
-                    _probeEnds[idx] = blocked ? hit.point : origin + _coneDirs[c] * upDistance;
+                    bool blocked = Physics.Raycast(origin, _coneDirs[idx], out hit, upDistance, occluderMask, QueryTriggerInteraction.Ignore);
+                    _coneOpen[idx] = blocked ? 0f : 1f;
+                    _probeOpen[idx] = _coneOpen[idx];
+                    _probeEnds[idx] = blocked ? hit.point : origin + _coneDirs[idx] * upDistance;
+                }
+                else if (idx == 4)
+                {
+                    _probeKinds[idx] = (int)SpatialAudioProbeKind.Zenith;
+                    EvaluateZenithCluster(origin, upDistance);
                 }
                 else if (idx == 5)
                 {
                     _probeKinds[idx] = (int)SpatialAudioProbeKind.SkyDown;
+
+                    if (!_hasCeiling)
+                    {
+                        _hasTopRoof = false;
+                        _topRoofY = origin.y;
+                        _probeOrigins[idx] = Vector3.zero;
+                        _probeEnds[idx] = Vector3.zero;
+                        _probeOpen[idx] = 1f;
+                        continue;
+                    }
 
                     Vector3 skyOrigin = new Vector3(origin.x, origin.y + upDistance, origin.z);
                     _probeOrigins[idx] = skyOrigin;
@@ -507,59 +514,208 @@ namespace BlackHorizon.HorizonWeatherTime
 
                     _probeOpen[idx] = 1f;
                 }
-                else if (idx >= 6 && idx <= 9)
-                {
-                    int k = idx - 6;
-                    _probeKinds[idx] = (int)SpatialAudioProbeKind.Wall;
-
-                    if (Physics.Raycast(origin, _cardinalDirs[k], out hit, sideDistance, occluderMask, QueryTriggerInteraction.Ignore))
-                    {
-                        _sideOpen[k] = 0f;
-                        _sideWallDist[k] = hit.distance;
-                        _probeEnds[idx] = hit.point;
-                    }
-                    else
-                    {
-                        _sideOpen[k] = 1f;
-                        _sideWallDist[k] = sideDistance;
-                        _probeEnds[idx] = origin + _cardinalDirs[k] * sideDistance;
-                    }
-
-                    _probeOpen[idx] = _sideOpen[k];
-                }
                 else
                 {
-                    int k = idx - 10;
-                    _probeKinds[idx] = (int)SpatialAudioProbeKind.OutsideWall;
-
-                    if (_sideOpen[k] > 0.5f)
-                    {
-                        _outsideSkyExposed[k] = 1f;
-                        _probeEnds[idx] = origin;
-                    }
-                    else
-                    {
-                        float probeDist = Mathf.Min(_sideWallDist[k] + 2f, sideDistance);
-                        Vector3 outsideSkyOrigin = origin + _cardinalDirs[k] * probeDist + new Vector3(0f, upDistance, 0f);
-                        _probeOrigins[idx] = outsideSkyOrigin;
-
-                        if (Physics.Raycast(outsideSkyOrigin, Vector3.down, out hit, upDistance + 5f, occluderMask, QueryTriggerInteraction.Ignore))
-                        {
-                            // If sky-down hit outside the wall lands at or below the current
-                            // ceiling, the wall faces open exterior sky.
-                            _outsideSkyExposed[k] = (hit.point.y <= _ceilingY + 0.5f) ? 1f : 0f;
-                            _probeEnds[idx] = hit.point;
-                        }
-                        else
-                        {
-                            _outsideSkyExposed[k] = 1f;
-                            _probeEnds[idx] = outsideSkyOrigin + Vector3.down * (upDistance + 5f);
-                        }
-                    }
-
-                    _probeOpen[idx] = _outsideSkyExposed[k];
+                    EvaluateHorizontalSector(idx - 6, origin, sideDistance, upDistance);
                 }
             }
+        }
+
+        /// <summary>
+        /// Probes overhead using a 3-point perpendicular cluster so thin beams or lamps do not trigger false roof detection.
+        /// </summary>
+        private void EvaluateZenithCluster(Vector3 origin, float upDistance)
+        {
+            RaycastHit hit;
+            if (!Physics.Raycast(origin, Vector3.up, out hit, upDistance, occluderMask, QueryTriggerInteraction.Ignore))
+            {
+                _zenithOpen = 1f;
+                _hasCeiling = false;
+                _ceilingY = origin.y + upDistance;
+                _probeEnds[4] = origin + Vector3.up * upDistance;
+                _probeOpen[4] = 1f;
+                return;
+            }
+
+            int hitCount = 1;
+            float ySum = hit.point.y;
+            Vector3 centerHitPoint = hit.point;
+
+            RaycastHit offsetHit;
+            if (Physics.Raycast(origin + new Vector3(0.45f, 0f, 0f), Vector3.up, out offsetHit, upDistance, occluderMask, QueryTriggerInteraction.Ignore))
+            {
+                hitCount++;
+                ySum += offsetHit.point.y;
+            }
+
+            if (Physics.Raycast(origin + new Vector3(0f, 0f, 0.45f), Vector3.up, out offsetHit, upDistance, occluderMask, QueryTriggerInteraction.Ignore))
+            {
+                hitCount++;
+                ySum += offsetHit.point.y;
+            }
+
+            float coneAvg = (_coneOpen[0] + _coneOpen[1] + _coneOpen[2] + _coneOpen[3]) * 0.25f;
+
+            if (hitCount < 3 && coneAvg >= 0.75f)
+            {
+                _zenithOpen = 1f;
+                _hasCeiling = false;
+                _ceilingY = origin.y + upDistance;
+                _probeEnds[4] = origin + Vector3.up * upDistance;
+                _probeOpen[4] = 1f;
+                return;
+            }
+
+            _hasCeiling = true;
+            _ceilingY = ySum / hitCount;
+            _zenithOpen = 1f - (hitCount / 3f);
+            _probeEnds[4] = centerHitPoint;
+            _probeOpen[4] = _zenithOpen;
+        }
+
+        /// <summary>
+        /// Evaluates a horizontal sector, filtering low railings, exterior courtyard obstacles beyond roof edges, and wall thickness.
+        /// </summary>
+        private void EvaluateHorizontalSector(int k, Vector3 origin, float sideDistance, float upDistance)
+        {
+            int probeIdx = 6 + k;
+            Vector3 dir = _sectorDirs[k];
+            _probeKinds[probeIdx] = (int)SpatialAudioProbeKind.Wall;
+            _sectorEdgeDist[k] = openingProbeDistance;
+
+            RaycastHit hit;
+            if (!Physics.Raycast(origin, dir, out hit, sideDistance, occluderMask, QueryTriggerInteraction.Ignore))
+            {
+                _sectorRawOpen[k] = 1f;
+                _sectorWallDist[k] = sideDistance;
+                _sectorWallTransmission[k] = 1f;
+                _probeEnds[probeIdx] = origin + dir * sideDistance;
+                UpdateSectorFilterAround(k);
+                return;
+            }
+
+            if (hit.distance < openingProbeDistance)
+            {
+                float ceilingClearance = _hasCeiling ? Mathf.Max(0f, (_ceilingY - origin.y) - 0.15f) : 0.45f;
+                float upperOffset = Mathf.Min(0.45f, ceilingClearance);
+
+                if (upperOffset > 0.12f)
+                {
+                    Vector3 upperOrigin = origin + new Vector3(0f, upperOffset, 0f);
+                    RaycastHit upperHit;
+                    if (!Physics.Raycast(upperOrigin, dir, out upperHit, sideDistance, occluderMask, QueryTriggerInteraction.Ignore))
+                    {
+                        _sectorRawOpen[k] = 1f;
+                        _sectorWallDist[k] = sideDistance;
+                        _sectorWallTransmission[k] = 1f;
+                        _probeEnds[probeIdx] = origin + dir * sideDistance;
+                        UpdateSectorFilterAround(k);
+                        return;
+                    }
+
+                    if (upperHit.distance > hit.distance + 1.5f)
+                    {
+                        hit = upperHit;
+                    }
+                }
+            }
+
+            float dist = hit.distance;
+            _sectorWallDist[k] = dist;
+            _probeEnds[probeIdx] = hit.point;
+
+            if (_hasCeiling && dist > 1.5f)
+            {
+                Vector3 preHitOrigin = origin + dir * (dist - 0.25f);
+                RaycastHit preSkyHit;
+                if (!Physics.Raycast(preHitOrigin, Vector3.up, out preSkyHit, upDistance, occluderMask, QueryTriggerInteraction.Ignore))
+                {
+                    _sectorRawOpen[k] = 1f;
+                    _sectorWallTransmission[k] = 1f;
+                    _sectorEdgeDist[k] = Mathf.Min(openingProbeDistance, dist - 0.25f);
+                    UpdateSectorFilterAround(k);
+                    return;
+                }
+            }
+
+            _sectorRawOpen[k] = 0f;
+            _sectorWallTransmission[k] = (_hasCeiling && dist <= openingProbeDistance)
+                ? MeasureWallTransmission(hit, dir, upDistance)
+                : 1f;
+
+            UpdateSectorFilterAround(k);
+        }
+
+        /// <summary>
+        /// Estimates sound transmission through a hit wall based on its measured thickness and exterior sky exposure.
+        /// Returns 0 for inner rooms or walls exceeding maxWallThickness, and up to 1 for thin exterior walls.
+        /// </summary>
+        private float MeasureWallTransmission(RaycastHit hit, Vector3 dir, float upDistance)
+        {
+            float maxCheck = Mathf.Max(3.0f, maxWallThickness + 0.5f);
+            float wallThickness = 0f;
+            bool hasThickness = false;
+
+            Collider col = hit.collider;
+            if (IsColliderValid(col))
+            {
+                Ray backRay = new Ray(hit.point + dir * maxCheck, -dir);
+                RaycastHit backHit;
+                if (col.Raycast(backRay, out backHit, maxCheck))
+                {
+                    wallThickness = Mathf.Max(0f, maxCheck - backHit.distance);
+                    hasThickness = true;
+                }
+                else if (Physics.CheckSphere(hit.point + dir * 0.5f, 0.05f, occluderMask, QueryTriggerInteraction.Ignore))
+                {
+                    return 0f;
+                }
+            }
+
+            float outsideStep = hasThickness ? Mathf.Clamp(wallThickness + 1.2f, 1.2f, maxCheck + 0.5f) : 1.5f;
+            Vector3 outsideOrigin = hit.point + dir * outsideStep;
+            RaycastHit outSkyHit;
+
+            if (Physics.Raycast(outsideOrigin, Vector3.up, out outSkyHit, upDistance, occluderMask, QueryTriggerInteraction.Ignore))
+            {
+                return 0f;
+            }
+
+            if (!hasThickness)
+            {
+                return 0.65f;
+            }
+
+            return 1f - Mathf.SmoothStep(0.15f, Mathf.Max(0.25f, maxWallThickness), wallThickness);
+        }
+
+        private bool IsColliderValid(Collider col)
+        {
+#if UDONSHARP
+            return Utilities.IsValid(col);
+#else
+            return col != null;
+#endif
+        }
+
+        private void UpdateSectorFilterAround(int centerSector)
+        {
+            ApplySectorFilter(centerSector);
+            ApplySectorFilter((centerSector + SECTOR_COUNT - 1) % SECTOR_COUNT);
+            ApplySectorFilter((centerSector + 1) % SECTOR_COUNT);
+        }
+
+        /// <summary>
+        /// Suppresses isolated 1-sector hits caused by thin poles, railings, or mullions flanked by open air.
+        /// </summary>
+        private void ApplySectorFilter(int sector)
+        {
+            int prev = (sector + SECTOR_COUNT - 1) % SECTOR_COUNT;
+            int next = (sector + 1) % SECTOR_COUNT;
+            bool filteredOpen = _sectorRawOpen[sector] > 0.5f || (_sectorRawOpen[prev] > 0.5f && _sectorRawOpen[next] > 0.5f);
+            float val = filteredOpen ? 1f : 0f;
+            _sectorOpen[sector] = val;
+            _probeOpen[6 + sector] = val;
         }
 
         // ---------------------------------------------------------------
@@ -574,62 +730,27 @@ namespace BlackHorizon.HorizonWeatherTime
         /// </summary>
         private void StepOpeningDepthProbes(int raysPerFrame)
         {
-            int budget = Mathf.Clamp(raysPerFrame, 1, OPENING_PROBE_TOTAL);
+            if (!_hasCeiling)
+            {
+                for (int i = 0; i < OPENING_PROBE_STEPS; i++) _openingStepOpen[i] = 1f;
+                return;
+            }
+
+            int budget = Mathf.Clamp(raysPerFrame, 1, OPENING_PROBE_STEPS);
             float stepDistance = Mathf.Max(0.5f, openingProbeDistance / OPENING_PROBE_STEPS);
             float upDistance = Mathf.Max(1f, verticalProbeDistance);
-            float sideDistance = Mathf.Max(1f, lateralProbeDistance);
             RaycastHit hit;
 
             for (int r = 0; r < budget; r++)
             {
                 int idx = _openingProbeCursor;
-                _openingProbeCursor = (_openingProbeCursor + 1) % OPENING_PROBE_TOTAL;
+                _openingProbeCursor = (_openingProbeCursor + 1) % OPENING_PROBE_STEPS;
 
-                if (idx < OPENING_CEILING_PROBES)
-                {
-                    int side = idx / OPENING_PROBE_STEPS;
-                    int step = idx % OPENING_PROBE_STEPS;
-                    float distance = (step + 1) * stepDistance;
+                float distance = (idx + 1) * stepDistance;
+                Vector3 origin = _listenerPosition + _openingProbeDir * distance + new Vector3(0f, 0.1f, 0f);
+                bool covered = Physics.Raycast(origin, Vector3.up, out hit, upDistance, occluderMask, QueryTriggerInteraction.Ignore);
 
-                    if (_sideOpen[side] <= 0.5f)
-                    {
-                        _openingStepOpen[idx] = 0f;
-                        continue;
-                    }
-
-                    Vector3 origin = _listenerPosition + _cardinalDirs[side] * distance + new Vector3(0f, 0.1f, 0f);
-                    bool covered = Physics.Raycast(origin, Vector3.up, out hit, upDistance, occluderMask, QueryTriggerInteraction.Ignore);
-
-                    _openingStepOpen[idx] = covered ? 0f : 1f;
-                }
-                else
-                {
-                    // Lintel probe: a horizontal ray slightly above head height catches
-                    // doorways and windows even when there is a roof outside. Without it,
-                    // a covered doorway would look like "deep indoors" to the ceiling edge test.
-                    int side = idx - OPENING_CEILING_PROBES;
-
-                    if (_sideOpen[side] <= 0.5f)
-                    {
-                        _sideLintelDist[side] = 0f;
-                        continue;
-                    }
-
-                    Vector3 origin = _listenerPosition + new Vector3(0f, 0.1f, 0f);
-                    float lintelOffset = _hasCeiling
-                        ? Mathf.Clamp(_ceilingY - _listenerPosition.y - 0.15f, 1.2f, 2.2f)
-                        : 2.2f;
-                    origin.y = _listenerPosition.y + lintelOffset;
-
-                    if (Physics.Raycast(origin, _cardinalDirs[side], out hit, sideDistance, occluderMask, QueryTriggerInteraction.Ignore))
-                    {
-                        _sideLintelDist[side] = hit.distance;
-                    }
-                    else
-                    {
-                        _sideLintelDist[side] = 0f;
-                    }
-                }
+                _openingStepOpen[idx] = covered ? 0f : 1f;
             }
         }
 
@@ -644,31 +765,24 @@ namespace BlackHorizon.HorizonWeatherTime
             else
             {
                 target = Mathf.Max(1f, openingProbeDistance);
+                float stepDistance = Mathf.Max(0.5f, openingProbeDistance / OPENING_PROBE_STEPS);
 
-                for (int side = 0; side < 4; side++)
+                for (int step = 0; step < OPENING_PROBE_STEPS; step++)
                 {
-                    if (_sideOpen[side] <= 0.5f) continue;
-
-                    float sideDistance = target;
-
-                    if (_sideLintelDist[side] > 0.05f)
+                    if (_openingStepOpen[step] > 0.5f)
                     {
-                        sideDistance = _sideLintelDist[side];
+                        float dist = (step + 1) * stepDistance;
+                        if (dist < target) target = dist;
+                        break;
                     }
-                    else
-                    {
-                        for (int step = 0; step < OPENING_PROBE_STEPS; step++)
-                        {
-                            int idx = side * OPENING_PROBE_STEPS + step;
-                            if (_openingStepOpen[idx] > 0.5f)
-                            {
-                                sideDistance = (step + 1) * Mathf.Max(0.5f, openingProbeDistance / OPENING_PROBE_STEPS);
-                                break;
-                            }
-                        }
-                    }
+                }
 
-                    if (sideDistance < target) target = sideDistance;
+                for (int k = 0; k < SECTOR_COUNT; k++)
+                {
+                    if (_sectorOpen[k] > 0.5f && _sectorEdgeDist[k] < target)
+                    {
+                        target = _sectorEdgeDist[k];
+                    }
                 }
             }
 
@@ -682,16 +796,29 @@ namespace BlackHorizon.HorizonWeatherTime
             float coneAvg = (_coneOpen[0] + _coneOpen[1] + _coneOpen[2] + _coneOpen[3]) * 0.25f;
             float targetDirectSky = _zenithOpen * 0.5f + coneAvg * 0.5f;
 
-            float openSides = (_sideOpen[0] + _sideOpen[1] + _sideOpen[2] + _sideOpen[3]) * 0.25f;
-            float extWallMax = Mathf.Max(
-                Mathf.Max(_outsideSkyExposed[0], _outsideSkyExposed[1]),
-                Mathf.Max(_outsideSkyExposed[2], _outsideSkyExposed[3]));
+            float openSum = 0f;
+            Vector3 openVector = Vector3.zero;
+            float maxWallWindow = 0f;
 
+            for (int k = 0; k < SECTOR_COUNT; k++)
+            {
+                float open = _sectorOpen[k];
+                openSum += open;
+                if (open > 0.5f) openVector += _sectorDirs[k];
+
+                int prev = (k + SECTOR_COUNT - 1) % SECTOR_COUNT;
+                int next = (k + 1) % SECTOR_COUNT;
+
+                float tPrev = _sectorOpen[prev] > 0.5f ? 0f : _sectorWallTransmission[prev];
+                float tCurr = open > 0.5f ? 0f : _sectorWallTransmission[k];
+                float tNext = _sectorOpen[next] > 0.5f ? 0f : _sectorWallTransmission[next];
+
+                float windowAvg = (tPrev + tCurr + tNext) / 3f;
+                if (windowAvg > maxWallWindow) maxWallWindow = windowAvg;
+            }
+
+            float openSides = openSum / SECTOR_COUNT;
             float roofThickness = _topRoofY - _ceilingY;
-
-            // Instead of a hard "single roof / not a single roof" switch, fade the roof
-            // layer out over the empty thickness above the first ceiling. Beams and
-            // joists close to the roof stay audible; a large gap fades to silence.
             float targetRoofExposed = 0f;
 
             if (_hasCeiling && _hasTopRoof)
@@ -709,14 +836,37 @@ namespace BlackHorizon.HorizonWeatherTime
                 }
             }
 
-            Vector3 openVector = Vector3.zero;
-            for (int k = 0; k < 4; k++)
+            float vecMag = openVector.magnitude;
+            bool hasOpenVec = vecMag > 0.01f;
+            Vector3 openNorm = hasOpenVec ? (openVector / vecMag) : _openingProbeDir;
+
+            // Select the strongest genuinely open sector so multi-window corners do not point into a solid wall.
+            float bestScore = -1f;
+            Vector3 bestSectorDir = _openingProbeDir;
+            for (int k = 0; k < SECTOR_COUNT; k++)
             {
-                if (_sideOpen[k] > 0.5f) openVector += _cardinalDirs[k];
+                if (_sectorOpen[k] <= 0.5f) continue;
+
+                int prev = (k + SECTOR_COUNT - 1) % SECTOR_COUNT;
+                int next = (k + 1) % SECTOR_COUNT;
+                float clusterWidth = _sectorOpen[prev] + _sectorOpen[k] + _sectorOpen[next];
+                float align = hasOpenVec ? Mathf.Max(0f, Vector3.Dot(_sectorDirs[k], openNorm)) : 0f;
+                float score = clusterWidth + align * 1.5f;
+
+                if (score > bestScore)
+                {
+                    bestScore = score;
+                    bestSectorDir = _sectorDirs[k];
+                }
             }
 
-            float asymMag = openVector.magnitude;
-            float targetAsymmetry = _hasCeiling ? Mathf.Clamp01(asymMag) : 0f;
+            if (bestScore > 0f)
+            {
+                _openingProbeDir = bestSectorDir;
+            }
+
+            float dirStrength = Mathf.Clamp01(vecMag / 3.0f);
+            float targetAsymmetry = _hasCeiling ? Mathf.Max(dirStrength, Mathf.Clamp01(openSides * 2.5f)) : 0f;
 
             float lerpT = 1f - Mathf.Exp(-acousticSmoothing * dt);
 
@@ -725,16 +875,15 @@ namespace BlackHorizon.HorizonWeatherTime
 
             _smoothDirectSky = Mathf.Lerp(_smoothDirectSky, targetDirectSky, lerpT);
             _smoothOpenSides = Mathf.Lerp(_smoothOpenSides, openSides, lerpT);
-            _smoothExteriorWall = Mathf.Lerp(_smoothExteriorWall, extWallMax, lerpT);
+            _smoothExteriorWall = Mathf.Lerp(_smoothExteriorWall, maxWallWindow, lerpT);
             _smoothOpeningAsymmetry = Mathf.Lerp(_smoothOpeningAsymmetry, targetAsymmetry, lerpT);
 
             float roofLerpT = 1f - Mathf.Exp(-roofSmoothing * dt);
             _smoothRoofExposed = Mathf.Lerp(_smoothRoofExposed, targetRoofExposed, roofLerpT);
 
-            if (asymMag > 0.01f)
+            if (bestScore > 0f)
             {
-                Vector3 normDir = openVector / asymMag;
-                _smoothOpenDir = Vector3.Slerp(_smoothOpenDir, normDir, lerpT).normalized;
+                _smoothOpenDir = Vector3.Slerp(_smoothOpenDir, bestSectorDir, lerpT).normalized;
             }
         }
 
@@ -746,6 +895,7 @@ namespace BlackHorizon.HorizonWeatherTime
             _smoothRoofExposed = 0f;
             _smoothOpeningAsymmetry = 0f;
             _smoothOpenDir = Vector3.forward;
+            _openingProbeDir = Vector3.forward;
             _openingDepth = 0f;
             _openingProximity = 1f;
             _smoothCeilingHeight = 0f;
@@ -838,22 +988,40 @@ namespace BlackHorizon.HorizonWeatherTime
             return _probeKinds[index];
         }
 
+        public float GetSectorOpen(int sector)
+        {
+            if (_sectorOpen == null || sector < 0 || sector >= _sectorOpen.Length) return 0f;
+            return _sectorOpen[sector];
+        }
+
+        public Vector3 GetSectorDirection(int sector)
+        {
+            if (_sectorDirs == null || sector < 0 || sector >= _sectorDirs.Length) return Vector3.forward;
+            return _sectorDirs[sector];
+        }
+
+        public float GetSectorWallDistance(int sector)
+        {
+            if (_sectorWallDist == null || sector < 0 || sector >= _sectorWallDist.Length) return 0f;
+            return _sectorWallDist[sector];
+        }
+
         public float GetSideOpen(int side)
         {
-            if (_sideOpen == null || side < 0 || side >= _sideOpen.Length) return 0f;
-            return _sideOpen[side];
+            int sector = (side & 3) * (SECTOR_COUNT / 4);
+            return GetSectorOpen(sector);
         }
 
         public float GetSideWallDistance(int side)
         {
-            if (_sideWallDist == null || side < 0 || side >= _sideWallDist.Length) return 0f;
-            return _sideWallDist[side];
+            int sector = (side & 3) * (SECTOR_COUNT / 4);
+            return GetSectorWallDistance(sector);
         }
 
         public Vector3 GetCardinalDirection(int side)
         {
-            if (_cardinalDirs == null || side < 0 || side >= _cardinalDirs.Length) return Vector3.forward;
-            return _cardinalDirs[side];
+            int sector = (side & 3) * (SECTOR_COUNT / 4);
+            return GetSectorDirection(sector);
         }
 
 #if !COMPILER_UDONSHARP && UNITY_EDITOR

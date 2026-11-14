@@ -377,12 +377,27 @@ namespace BlackHorizon.HorizonWeatherTime
 
         private static void DrawOpenSides(Vector2 center, float radius, SpatialAudioSystem system)
         {
-            for (int side = 0; side < 4; side++)
-            {
-                if (system.GetSideOpen(side) <= 0.5f) continue;
+            int count = system.SectorCount;
+            if (count <= 0) return;
 
-                Vector2 direction = CardinalToScreen(side);
-                DrawLine(center, center + direction * radius * 0.94f, new Color(OpeningColor.r, OpeningColor.g, OpeningColor.b, 0.35f), 3f);
+            float range = Mathf.Max(1f, system.visualizerRange);
+
+            for (int sector = 0; sector < count; sector++)
+            {
+                Vector3 dir3 = system.GetSectorDirection(sector);
+                Vector2 dir = new Vector2(dir3.x, -dir3.z);
+
+                if (system.GetSectorOpen(sector) > 0.5f)
+                {
+                    DrawLine(center, center + dir * radius * 0.94f, new Color(OpeningColor.r, OpeningColor.g, OpeningColor.b, 0.25f), 2f);
+                }
+                else
+                {
+                    float norm = Mathf.Clamp01(system.GetSectorWallDistance(sector) / range);
+                    Vector2 hitPoint = center + dir * (radius * norm);
+                    DrawLine(center, hitPoint, new Color(WallColor.r, WallColor.g, WallColor.b, 0.22f), 1.5f);
+                    DrawDisc(hitPoint, 2.5f, new Color(WallColor.r, WallColor.g, WallColor.b, 0.75f));
+                }
             }
         }
 
