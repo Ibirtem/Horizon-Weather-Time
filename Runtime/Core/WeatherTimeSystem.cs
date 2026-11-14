@@ -297,7 +297,7 @@ namespace BlackHorizon.HorizonWeatherTime
                 TickModuleTransitions();
                 UpdateSystem();
 
-                if (_weatherEffectsManager != null)
+                if (_weatherEffectsManager != null || _weatherAudioManager != null)
                 {
                     Vector3 targetPos = GetViewPosition();
                     if (_weatherEffectsManager != null) _weatherEffectsManager.UpdatePosition(targetPos);
@@ -631,8 +631,7 @@ namespace BlackHorizon.HorizonWeatherTime
                 ap.windBaseStereoClip, ap.windGustStereoClip,
                 ap.rainVolume, ap.rainInteriorScale, ap.rainRoofScale, ap.rainPitch,
                 ap.windVolume, ap.windGustStrength, ap.windGustSpeed,
-                ap.windInteriorScale, ap.windPitch,
-                ap.minBunkerScale, ap.acousticSmoothing
+                ap.windInteriorScale, ap.windPitch
             );
         }
 
@@ -1322,9 +1321,6 @@ namespace BlackHorizon.HorizonWeatherTime
             r.windGustSpeed = Mathf.Lerp(a.windGustSpeed, b.windGustSpeed, t);
             r.windInteriorScale = Mathf.Lerp(a.windInteriorScale, b.windInteriorScale, t);
             r.windPitch = Mathf.Lerp(a.windPitch, b.windPitch, t);
-
-            r.minBunkerScale = Mathf.Lerp(a.minBunkerScale, b.minBunkerScale, t);
-            r.acousticSmoothing = Mathf.Lerp(a.acousticSmoothing, b.acousticSmoothing, t);
         }
 
 #if !COMPILER_UDONSHARP && UNITY_EDITOR

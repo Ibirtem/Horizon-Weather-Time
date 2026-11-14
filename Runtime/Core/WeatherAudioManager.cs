@@ -8,6 +8,28 @@ using VRC.Udon;
 
 namespace BlackHorizon.HorizonWeatherTime
 {
+    /// <summary>
+    /// Logical role of a weather-driven spatial emitter.
+    /// The role is data, not a GameObject name, so the rig can be renamed, reordered,
+    /// or rebuilt without breaking the weather mix.
+    /// </summary>
+    public enum WeatherAudioStemType
+    {
+        RainExterior = 0,
+        RainInterior = 1,
+        RainOpening = 2,
+        RainRoof = 3,
+        WindBase = 4,
+        WindGust = 5
+    }
+
+    /// <summary>
+    /// Weather audio adapter.
+    ///
+    /// Weather owns only its mix data and the stem-to-emitter mapping. Spatialization,
+    /// distance attenuation, acoustic probing, and playback belong to SpatialAudioSystem.
+    /// Emitters are bound through stemEmitters + stemTypes, never through child names.
+    /// </summary>
     [ExecuteInEditMode]
 #if UDONSHARP
     public class WeatherAudioManager : UdonSharpBehaviour
@@ -15,61 +37,42 @@ namespace BlackHorizon.HorizonWeatherTime
     public class WeatherAudioManager : MonoBehaviour
 #endif
     {
-        [Header("2D Stereo Sources (SpatialBlend = 0)")]
-        public AudioSource rainExterior2D;
-        public AudioSource rainInterior2D;
-        public AudioSource windBase2D;
-        public AudioSource windGust2D;
+        [Header("Spatial Audio Backend (Auto-Assigned)")]
+        [Tooltip("The generic spatial audio system that positions and plays the weather emitters.")]
+        public SpatialAudioSystem audioSystem;
 
-        [Header("3D Directional Mono Sources (SpatialBlend = 1)")]
-        public AudioSource rainOpening3D;
-        public AudioSource rainRoof3D;
+        [Header("Weather Stem Bindings (Auto-Assigned)")]
+        [Tooltip("Emitters driven by weather. Order matches stemTypes. Child object names are irrelevant.")]
+        public SpatialAudioEmitter[] stemEmitters;
 
-        [Header("Acoustic Probe Configuration")]
-        [Tooltip("Maximum distance for upward ceiling and sky-down roof probes.")]
-        public float verticalProbeDistance = 60.0f;
+        [Tooltip("Logical role for each entry in stemEmitters. Stored as ints for Udon compatibility.")]
+        public int[] stemTypes;
 
-        [Tooltip("Maximum horizontal distance to check for walls and open doorways.")]
-        public float lateralProbeDistance = 18.0f;
+        [Header("Doorway Blend")]
+        [Range(0f, 1f)]
+        [Tooltip("How much of the outdoor rain bed bleeds in at the nearest opening, on top of the base bleed.")]
+        public float openingRainBleed = 0.72f;
 
-        [Tooltip("Distance at which the directional opening 3D emitter orbits the listener head.")]
-        public float openingEmitterRadius = 2.5f;
+        [Range(0f, 1f)]
+        [Tooltip("How strongly the directional opening emitter ramps up as you approach the doorway.")]
+        public float openingDirectionalGain = 0.85f;
 
-        [Tooltip("Max vertical thickness (m) between ceiling and top roof to count as a single-story roof.")]
-        public float singleRoofMaxThickness = 1.8f;
+        [Header("Wind Level")]
+        [Tooltip("Use the wind volume from the active AudioProfile. Disable to keep wind identical across all weather profiles.")]
+        public bool useProfileWindVolume = false;
 
-        // Layer mask excluding IgnoreRaycast(2), UI(5), Player(9), PlayerLocal(10), MirrorReflection(18)
-        private int _raycastMask = ~((1 << 2) | (1 << 5) | (1 << 9) | (1 << 10) | (1 << 18));
+        [Range(0f, 1f)]
+        [Tooltip("Shared wind bed level used when Use Profile Wind Volume is disabled.")]
+        public float windVolume = 0.18f;
 
-        // Round-robin state (14 probes total, 2 executed per frame)
-        // 0: Zenith (+Y), 1..4: 45-deg sky cone, 5: Sky-down multi-story check,
-        // 6..9: Cardinal wall probes (N,E,S,W), 10..13: Outside-wall sky-down probes (N,E,S,W)
-        private const int TOTAL_PROBES = 14;
-        private int _probeCursor = 0;
+        [Tooltip("Use the gust strength from the active AudioProfile. Disable to keep gust dynamics identical across profiles.")]
+        public bool useProfileWindGustStrength = false;
 
-        private float _zenithOpen = 1f;
-        private bool _hasCeiling = false;
-        private float _ceilingY = 0f;
-        private bool _hasTopRoof = false;
-        private float _topRoofY = 0f;
+        [Range(0f, 1f)]
+        [Tooltip("Shared gust strength used when Use Profile Wind Gust Strength is disabled.")]
+        public float windGustStrength = 0.35f;
 
-        private float[] _coneOpen;
-        private float[] _sideOpen;
-        private float[] _sideWallDist;
-        private float[] _outsideSkyExposed;
-
-        private Vector3[] _coneDirs;
-        private Vector3[] _cardinalDirs;
-
-        // Smoothed acoustic state
-        private float _smoothDirectSky = 1f;
-        private float _smoothOpenSides = 1f;
-        private float _smoothExteriorWall = 1f;
-        private float _smoothRoofExposed = 0f;
-        private float _smoothOpeningAsymmetry = 0f;
-        private Vector3 _smoothOpenDir = Vector3.forward;
-
-        // Cached audio profile parameters
+        // Cached weather parameters from the active AudioProfile.
         private bool _audioEnabled = false;
         private float _masterVolume = 1f;
         private float _rainVolume = 0f;
@@ -81,8 +84,6 @@ namespace BlackHorizon.HorizonWeatherTime
         private float _windGustSpeed = 0.25f;
         private float _windInteriorScale = 0.25f;
         private float _windPitch = 1f;
-        private float _minBunkerScale = 0.05f;
-        private float _acousticSmoothing = 3.5f;
 
         private AudioClip _clipRainExtStereo;
         private AudioClip _clipRainExtMono;
@@ -91,95 +92,115 @@ namespace BlackHorizon.HorizonWeatherTime
         private AudioClip _clipWindBaseStereo;
         private AudioClip _clipWindGustStereo;
 
-        private Vector3 _listenerPos;
-        private bool _initialized = false;
-
         private void OnEnable()
         {
-            InitializeProbes();
-            ResolveAudioSources();
+            ResolveReferences();
         }
 
         private void Start()
         {
-            InitializeProbes();
-            ResolveAudioSources();
+            ResolveReferences();
+        }
+
+        private void OnDisable()
+        {
+            SilenceAll();
         }
 
         /**
-         * Resolves child AudioSource components by name if serialized references were cleared.
+         * Resolves the spatial backend and the stem arrays. The runtime never searches
+         * for emitters by child name; the editor owns the migration and binding.
          */
-        private void ResolveAudioSources()
+        private void ResolveReferences()
         {
-            if (rainExterior2D == null) rainExterior2D = FindChildAudioSource("Audio_Rain_Exterior_2D");
-            if (rainInterior2D == null) rainInterior2D = FindChildAudioSource("Audio_Rain_Interior_2D");
-            if (windBase2D == null)     windBase2D = FindChildAudioSource("Audio_Wind_Base_2D");
-            if (windGust2D == null)     windGust2D = FindChildAudioSource("Audio_Wind_Gust_2D");
-            if (rainOpening3D == null)  rainOpening3D = FindChildAudioSource("Audio_Rain_Opening_3D");
-            if (rainRoof3D == null)     rainRoof3D = FindChildAudioSource("Audio_Rain_Roof_3D");
-        }
+            if (audioSystem == null) audioSystem = GetComponent<SpatialAudioSystem>();
 
-        private AudioSource FindChildAudioSource(string childName)
-        {
-            Transform child = transform.Find(childName);
-            if (child == null) return null;
-            return child.GetComponent<AudioSource>();
+            if (stemEmitters == null || stemEmitters.Length == 0 ||
+                stemTypes == null || stemTypes.Length != stemEmitters.Length)
+            {
+#if !COMPILER_UDONSHARP && UNITY_EDITOR
+                // In edit mode the inspector migration owns the binding. Do not guess
+                // roles from hierarchy order and poison the serialized arrays.
+                if (!Application.isPlaying) return;
+#endif
+                ResolveStemFallback();
+            }
         }
 
         /**
-         * Pre-allocates probe direction vectors and state arrays to guarantee zero GC allocations per frame.
+         * Last-resort discovery for old scenes without serialized stem arrays.
+         * Roles are assigned in hierarchy order; the editor migration does a proper bind.
          */
-        private void InitializeProbes()
+        private void ResolveStemFallback()
         {
-            if (_initialized) return;
+            int childCount = transform.childCount;
+            SpatialAudioEmitter[] found = new SpatialAudioEmitter[childCount];
+            int count = 0;
 
-            _coneOpen = new float[4] { 1f, 1f, 1f, 1f };
-            _sideOpen = new float[4] { 1f, 1f, 1f, 1f };
-            _sideWallDist = new float[4] { lateralProbeDistance, lateralProbeDistance, lateralProbeDistance, lateralProbeDistance };
-            _outsideSkyExposed = new float[4] { 1f, 1f, 1f, 1f };
-
-            _cardinalDirs = new Vector3[4]
+            for (int i = 0; i < childCount; i++)
             {
-                Vector3.forward,
-                Vector3.right,
-                Vector3.back,
-                Vector3.left
-            };
+                SpatialAudioEmitter emitter = transform.GetChild(i).GetComponent<SpatialAudioEmitter>();
+                if (emitter != null)
+                {
+                    found[count] = emitter;
+                    count++;
+                }
+            }
 
-            const float invSqrt2 = 0.70710678f;
-            _coneDirs = new Vector3[4]
+            if (count == 0)
             {
-                new Vector3(0f, invSqrt2, invSqrt2),
-                new Vector3(invSqrt2, invSqrt2, 0f),
-                new Vector3(0f, invSqrt2, -invSqrt2),
-                new Vector3(-invSqrt2, invSqrt2, 0f)
-            };
+                stemEmitters = null;
+                stemTypes = null;
+                return;
+            }
 
-            _listenerPos = transform.position;
-            _initialized = true;
+            SpatialAudioEmitter[] trimmed = new SpatialAudioEmitter[count];
+            int[] types = new int[count];
+
+            for (int i = 0; i < count; i++)
+            {
+                trimmed[i] = found[i];
+
+                // Legacy rigs were created in this hierarchy order:
+                // RainExterior, RainInterior, WindBase, WindGust, RainOpening, RainRoof.
+                // The editor migration binds by role; this is only a last-resort fallback.
+                if (i == 0) types[i] = (int)WeatherAudioStemType.RainExterior;
+                else if (i == 1) types[i] = (int)WeatherAudioStemType.RainInterior;
+                else if (i == 2) types[i] = (int)WeatherAudioStemType.WindBase;
+                else if (i == 3) types[i] = (int)WeatherAudioStemType.WindGust;
+                else if (i == 4) types[i] = (int)WeatherAudioStemType.RainOpening;
+                else if (i == 5) types[i] = (int)WeatherAudioStemType.RainRoof;
+                else types[i] = (int)WeatherAudioStemType.RainExterior;
+            }
+
+            stemEmitters = trimmed;
+            stemTypes = types;
         }
 
         /**
-         * Updates the listener reference position tracked by acoustic probes and 3D emitters.
+         * Updates the listener reference tracked by the spatial audio system.
          *
          * @param headPosition World-space position of the player head or active camera.
          */
         public void UpdateAudioPosition(Vector3 headPosition)
         {
-            _listenerPos = headPosition;
+            if (audioSystem != null)
+            {
+                audioSystem.SetListenerPosition(headPosition);
+            }
         }
 
         /**
-         * Dispatches current audio profile settings and clips from WeatherTimeSystem.
-         * Silences all sources automatically while in Edit Mode.
+         * Receives the active weather audio mix and drives the bound stem emitters.
+         * Spatial positions, acoustic gating, distance attenuation, and playback are
+         * handled by SpatialAudioSystem.
          */
         public void UpdateAudio(
             bool isEnabled, float masterVol,
             AudioClip rainExtStereo, AudioClip rainExtMono, AudioClip rainIntStereo, AudioClip rainRoofMono,
             AudioClip windBaseStereo, AudioClip windGustStereo,
             float rainVol, float rainIntScale, float rainRoofScale, float rainPitch,
-            float windVol, float windGustStr, float windGustSpd, float windIntScale, float windPitch,
-            float minBunkerScale, float smoothing)
+            float windVol, float windGustStr, float windGustSpd, float windIntScale, float windPitch)
         {
             _audioEnabled = isEnabled;
             _masterVolume = masterVol;
@@ -202,184 +223,61 @@ namespace BlackHorizon.HorizonWeatherTime
             _windInteriorScale = windIntScale;
             _windPitch = windPitch;
 
-            _minBunkerScale = minBunkerScale;
-            _acousticSmoothing = smoothing;
-
-#if !COMPILER_UDONSHARP && UNITY_EDITOR
-            if (!Application.isPlaying)
-            {
-                StopAllSources();
-                return;
-            }
-#endif
-        }
-
-        private void Update()
-        {
-#if !COMPILER_UDONSHARP && UNITY_EDITOR
-            if (!Application.isPlaying) return;
-#endif
-            if (!_initialized) InitializeProbes();
-
             if (!_audioEnabled || _masterVolume <= 0.001f)
             {
-                StopAllSources();
+                SilenceAll();
                 return;
             }
 
-            StepAcousticProbes(2);
-            EvaluateAndApplyMix(Time.deltaTime);
+            SolveWeatherMix();
         }
 
         /**
-         * Executes a fixed budget of round-robin raycasts per frame to evaluate sky exposure,
-         * multi-story roof thickness, lateral openings, and exterior wall proximity.
-         *
-         * @param raysPerFrame Number of raycasts to advance this frame.
+         * Converts the generic acoustic environment into stem gains. Weather-specific
+         * taste (rain vs wind balance, gust curves, interior scaling) stays here; the
+         * reusable spatial engine stays in SpatialAudioSystem.
          */
-        private void StepAcousticProbes(int raysPerFrame)
+        private void SolveWeatherMix()
         {
-            Vector3 origin = _listenerPos + new Vector3(0f, 0.1f, 0f);
-            RaycastHit hit;
-
-            for (int r = 0; r < raysPerFrame; r++)
+            if (stemEmitters == null || stemEmitters.Length == 0 ||
+                stemTypes == null || stemTypes.Length != stemEmitters.Length)
             {
-                int idx = _probeCursor;
-                _probeCursor = (_probeCursor + 1) % TOTAL_PROBES;
-
-                if (idx == 0)
-                {
-                    if (Physics.Raycast(origin, Vector3.up, out hit, verticalProbeDistance, _raycastMask, QueryTriggerInteraction.Ignore))
-                    {
-                        _zenithOpen = 0f;
-                        _hasCeiling = true;
-                        _ceilingY = hit.point.y;
-                    }
-                    else
-                    {
-                        _zenithOpen = 1f;
-                        _hasCeiling = false;
-                        _ceilingY = origin.y + verticalProbeDistance;
-                    }
-                }
-                else if (idx >= 1 && idx <= 4)
-                {
-                    int c = idx - 1;
-                    bool blocked = Physics.Raycast(origin, _coneDirs[c], verticalProbeDistance, _raycastMask, QueryTriggerInteraction.Ignore);
-                    _coneOpen[c] = blocked ? 0f : 1f;
-                }
-                else if (idx == 5)
-                {
-                    Vector3 skyOrigin = new Vector3(origin.x, origin.y + verticalProbeDistance, origin.z);
-                    if (Physics.Raycast(skyOrigin, Vector3.down, out hit, verticalProbeDistance + 5f, _raycastMask, QueryTriggerInteraction.Ignore))
-                    {
-                        _hasTopRoof = true;
-                        _topRoofY = hit.point.y;
-                    }
-                    else
-                    {
-                        _hasTopRoof = false;
-                        _topRoofY = origin.y;
-                    }
-                }
-                else if (idx >= 6 && idx <= 9)
-                {
-                    int k = idx - 6;
-                    if (Physics.Raycast(origin, _cardinalDirs[k], out hit, lateralProbeDistance, _raycastMask, QueryTriggerInteraction.Ignore))
-                    {
-                        _sideOpen[k] = 0f;
-                        _sideWallDist[k] = hit.distance;
-                    }
-                    else
-                    {
-                        _sideOpen[k] = 1f;
-                        _sideWallDist[k] = lateralProbeDistance;
-                    }
-                }
-                else
-                {
-                    int k = idx - 10;
-                    if (_sideOpen[k] > 0.5f)
-                    {
-                        _outsideSkyExposed[k] = 1f;
-                    }
-                    else
-                    {
-                        float probeDist = Mathf.Min(_sideWallDist[k] + 2.0f, lateralProbeDistance);
-                        Vector3 outsideSkyOrigin = origin + _cardinalDirs[k] * probeDist + new Vector3(0f, verticalProbeDistance, 0f);
-
-                        if (Physics.Raycast(outsideSkyOrigin, Vector3.down, out hit, verticalProbeDistance + 5f, _raycastMask, QueryTriggerInteraction.Ignore))
-                        {
-                            // If sky-down hit outside the wall lands at or below our current ceiling, the wall faces open exterior sky
-                            _outsideSkyExposed[k] = (hit.point.y <= _ceilingY + 0.5f) ? 1f : 0f;
-                        }
-                        else
-                        {
-                            _outsideSkyExposed[k] = 1f;
-                        }
-                    }
-                }
+                ResolveReferences();
             }
-        }
 
-        /**
-         * Smoothly integrates probe results and crossfades 2D stereo beds and 3D spatialized emitters.
-         *
-         * @param dt Frame delta time in seconds.
-         */
-        private void EvaluateAndApplyMix(float dt)
-        {
-            float coneAvg = (_coneOpen[0] + _coneOpen[1] + _coneOpen[2] + _coneOpen[3]) * 0.25f;
-            float targetDirectSky = _zenithOpen * 0.5f + coneAvg * 0.5f;
+            if (stemEmitters == null || stemEmitters.Length == 0) return;
 
-            float openSides = (_sideOpen[0] + _sideOpen[1] + _sideOpen[2] + _sideOpen[3]) * 0.25f;
-            float extWallMax = Mathf.Max(
-                Mathf.Max(_outsideSkyExposed[0], _outsideSkyExposed[1]),
-                Mathf.Max(_outsideSkyExposed[2], _outsideSkyExposed[3])
-            );
+            float envSky = audioSystem != null ? audioSystem.SkyExposure : 1f;
+            float envSides = audioSystem != null ? audioSystem.LateralOpenness : 1f;
+            float envWall = audioSystem != null ? audioSystem.ExteriorWallExposure : 1f;
+            float envRoof = audioSystem != null ? audioSystem.RoofExposure : 0f;
+            float envOpening = audioSystem != null ? audioSystem.OpeningStrength : 0f;
+            float envProximity = audioSystem != null ? audioSystem.OpeningProximity : 0f;
+            float minIndoor = audioSystem != null ? audioSystem.minimumIndoorGain : 0.05f;
 
-            bool singleRoofAbove = _hasCeiling && _hasTopRoof && ((_topRoofY - _ceilingY) <= singleRoofMaxThickness);
-            float targetRoofExposed = singleRoofAbove ? 1f : 0f;
-
-            Vector3 openVector = Vector3.zero;
-            for (int k = 0; k < 4; k++)
-            {
-                if (_sideOpen[k] > 0.5f) openVector += _cardinalDirs[k];
-            }
-            float asymMag = openVector.magnitude;
-            float targetAsymmetry = _hasCeiling ? Mathf.Clamp01(asymMag) : 0f;
-
-            float lerpT = 1f - Mathf.Exp(-_acousticSmoothing * dt);
-            _smoothDirectSky = Mathf.Lerp(_smoothDirectSky, targetDirectSky, lerpT);
-            _smoothOpenSides = Mathf.Lerp(_smoothOpenSides, openSides, lerpT);
-            _smoothExteriorWall = Mathf.Lerp(_smoothExteriorWall, extWallMax, lerpT);
-            _smoothRoofExposed = Mathf.Lerp(_smoothRoofExposed, targetRoofExposed, lerpT);
-            _smoothOpeningAsymmetry = Mathf.Lerp(_smoothOpeningAsymmetry, targetAsymmetry, lerpT);
-
-            if (asymMag > 0.01f)
-            {
-                Vector3 normDir = openVector / asymMag;
-                _smoothOpenDir = Vector3.Slerp(_smoothOpenDir, normDir, lerpT).normalized;
-            }
+            float wallTransmission = Mathf.Lerp(minIndoor, 1f, Mathf.Max(envWall, envSides));
 
             // --- Rain stem gains ---
             float baseRain = _rainVolume * _masterVolume;
 
-            // Full 2D stereo exterior rain dominates outdoors or in wide-open spaces
-            float ext2DFactor = Mathf.Clamp01(_smoothDirectSky * 0.85f + _smoothOpenSides * (1f - (_hasCeiling ? 0.65f : 0f)));
+            // Outdoor rain bleeds in as the listener approaches an opening, before the
+            // sky probe flips to "outside". This is what removes the doorway volume blast.
+            float openingBleed = 0.08f + Mathf.Clamp01(openingRainBleed) * Mathf.Clamp01(envProximity);
+            float outdoorBleed = envOpening * (1f - envSky) * openingBleed;
+            float ext2DFactor = Mathf.Clamp01(envSky + outdoorBleed);
             float ext2DVol = baseRain * ext2DFactor;
 
-            // Directional 3D opening emitter activates under roofs when one side opens to outside air
-            float opening3DFactor = Mathf.Clamp01(_smoothOpeningAsymmetry * (1f - _smoothDirectSky));
+            // Directional opening source ramps with proximity and sits at the estimated
+            // opening distance, so it gets closer/louder as you approach the doorway.
+            float opening3DFactor = Mathf.Clamp01(envOpening * (1f - envSky) * (0.15f + Mathf.Clamp01(openingDirectionalGain) * Mathf.Clamp01(envProximity)));
             float opening3DVol = baseRain * opening3DFactor * 0.9f;
 
-            // 2D muffled interior rain scales down smoothly if buried deep inside multi-room bunkers
+            // 2D muffled interior rain crossfades out as the outdoor component takes over.
             float enclosureFactor = 1f - ext2DFactor;
-            float wallTransmission = Mathf.Lerp(_minBunkerScale, 1f, Mathf.Max(_smoothExteriorWall, _smoothOpenSides));
             float int2DVol = baseRain * enclosureFactor * _rainInteriorScale * wallTransmission;
 
-            // 3D overhead roof patter activates strictly for single-story roofs
-            float roof3DVol = baseRain * _smoothRoofExposed * _rainRoofScale;
+            // 3D overhead roof patter activates strictly for single-story roofs.
+            float roof3DVol = baseRain * envRoof * _rainRoofScale;
 
             // --- Wind stem gains + multi-sine organic gusts ---
             float t = Time.time * _windGustSpeed;
@@ -389,69 +287,84 @@ namespace BlackHorizon.HorizonWeatherTime
                 + 0.08f * Mathf.Sin(t * 4.19f + 2.7f);
             gustWave = Mathf.Clamp01(gustWave);
 
-            float windExposure = Mathf.Lerp(_windInteriorScale * wallTransmission, 1f, Mathf.Max(_smoothDirectSky, _smoothOpenSides * 0.7f));
-            float baseWind = _windVolume * _masterVolume * windExposure;
-            float windBaseVol = baseWind * (1f - _windGustStrength * 0.25f + gustWave * _windGustStrength * 0.35f);
-            float windGustVol = baseWind * _windGustStrength * gustWave;
+            float windOutdoor = Mathf.Max(envSky, Mathf.Max(envSides * 0.7f, envOpening * Mathf.Clamp01(envProximity)));
+            float windExposure = Mathf.Lerp(_windInteriorScale * wallTransmission, 1f, windOutdoor);
+            float windLevel = useProfileWindVolume ? _windVolume : (windVolume > 0.00001f ? windVolume : 0.18f);
+            float sharedGustStrength = windGustStrength > 0.00001f ? windGustStrength : 0.35f;
+            float baseWind = windLevel * _masterVolume * windExposure;
+            float gustStrength = useProfileWindGustStrength ? _windGustStrength : sharedGustStrength;
+            float windBaseVol = baseWind * (1f - gustStrength * 0.25f + gustWave * gustStrength * 0.35f);
+            float windGustVol = baseWind * gustStrength * gustWave;
+            float gustPitch = _windPitch * Mathf.Lerp(0.95f, 1.08f, gustWave);
 
-            // Position 3D emitters relative to head without rotating with head orientation
-            if (rainOpening3D != null)
+            for (int i = 0; i < stemEmitters.Length; i++)
             {
-                rainOpening3D.transform.position = _listenerPos + _smoothOpenDir * openingEmitterRadius;
-            }
-            if (rainRoof3D != null)
-            {
-                rainRoof3D.transform.position = _listenerPos + new Vector3(0f, 1.4f, 0f);
-            }
+                SpatialAudioEmitter emitter = stemEmitters[i];
+                if (emitter == null) continue;
 
-            ApplySource(rainExterior2D, _clipRainExtStereo, ext2DVol, _rainPitch);
-            ApplySource(rainInterior2D, _clipRainIntStereo, int2DVol, _rainPitch);
-            ApplySource(rainOpening3D, _clipRainExtMono, opening3DVol, _rainPitch);
-            ApplySource(rainRoof3D, _clipRainRoofMono, roof3DVol, _rainPitch);
-            ApplySource(windBase2D, _clipWindBaseStereo, windBaseVol, _windPitch);
-            ApplySource(windGust2D, _clipWindGustStereo, windGustVol, _windPitch * Mathf.Lerp(0.95f, 1.08f, gustWave));
+                int rawType = i < stemTypes.Length ? stemTypes[i] : 0;
+                WeatherAudioStemType type = (WeatherAudioStemType)Mathf.Clamp(rawType, 0, 5);
+
+                AudioClip clip = null;
+                float volume = 0f;
+                float pitch = _rainPitch;
+
+                switch (type)
+                {
+                    case WeatherAudioStemType.RainExterior:
+                        clip = _clipRainExtStereo;
+                        volume = ext2DVol;
+                        pitch = _rainPitch;
+                        break;
+
+                    case WeatherAudioStemType.RainInterior:
+                        clip = _clipRainIntStereo;
+                        volume = int2DVol;
+                        pitch = _rainPitch;
+                        break;
+
+                    case WeatherAudioStemType.RainOpening:
+                        clip = _clipRainExtMono;
+                        volume = opening3DVol;
+                        pitch = _rainPitch;
+                        break;
+
+                    case WeatherAudioStemType.RainRoof:
+                        clip = _clipRainRoofMono;
+                        volume = roof3DVol;
+                        pitch = _rainPitch;
+                        break;
+
+                    case WeatherAudioStemType.WindBase:
+                        clip = _clipWindBaseStereo;
+                        volume = windBaseVol;
+                        pitch = _windPitch;
+                        break;
+
+                    case WeatherAudioStemType.WindGust:
+                        clip = _clipWindGustStereo;
+                        volume = windGustVol;
+                        pitch = gustPitch;
+                        break;
+                }
+
+                DriveEmitter(emitter, clip, volume, pitch);
+            }
         }
 
-        private void ApplySource(AudioSource src, AudioClip clip, float volume, float pitch)
+        private void DriveEmitter(SpatialAudioEmitter emitter, AudioClip clip, float volume, float pitch)
         {
-            if (src == null) return;
-
-            if (clip == null || volume <= 0.001f)
-            {
-                if (src.isPlaying) src.Stop();
-                src.volume = 0f;
-                return;
-            }
-
-            if (src.clip != clip)
-            {
-                src.clip = clip;
-            }
-
-            src.volume = volume;
-            src.pitch = pitch;
-
-            if (!src.isPlaying)
-            {
-                src.Play();
-            }
+            if (emitter == null) return;
+            emitter.SetExternalDrive(clip, volume, pitch);
         }
 
-        private void StopAllSources()
+        private void SilenceAll()
         {
-            StopSource(rainExterior2D);
-            StopSource(rainInterior2D);
-            StopSource(windBase2D);
-            StopSource(windGust2D);
-            StopSource(rainOpening3D);
-            StopSource(rainRoof3D);
-        }
+            if (stemEmitters == null) return;
 
-        private void StopSource(AudioSource src)
-        {
-            if (src != null && src.isPlaying)
+            for (int i = 0; i < stemEmitters.Length; i++)
             {
-                src.Stop();
+                DriveEmitter(stemEmitters[i], null, 0f, 1f);
             }
         }
     }

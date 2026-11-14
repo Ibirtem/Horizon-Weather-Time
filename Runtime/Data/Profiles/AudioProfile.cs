@@ -2,7 +2,11 @@ using UnityEngine;
 
 namespace BlackHorizon.HorizonWeatherTime
 {
-    [CreateAssetMenu(fileName = "New Audio Profile", menuName = "Horizon/Profiles/Audio Profile")]
+    /// <summary>
+    /// Weather audio data: clips and mix levels only. Spatialization and acoustic
+    /// behavior are handled by the standalone SpatialAudioSystem.
+    /// </summary>
+    [CreateAssetMenu(fileName = "New Weather Audio Profile", menuName = "Horizon/Profiles/Weather Audio Profile")]
     public class AudioProfile : ScriptableObject
     {
         [Header("Master")]
@@ -46,9 +50,11 @@ namespace BlackHorizon.HorizonWeatherTime
         public float rainPitch = 1.0f;
 
         [Header("Wind Settings")]
+        [Tooltip("Wind bed level. WeatherAudioManager can ignore this and use a shared level across profiles.")]
         [Range(0f, 1f)]
         public float windVolume = 0.2f;
 
+        [Tooltip("Gust strength. WeatherAudioManager can ignore this and use a shared gust strength across profiles.")]
         [Range(0f, 1f)]
         public float windGustStrength = 0.35f;
 
@@ -61,15 +67,6 @@ namespace BlackHorizon.HorizonWeatherTime
 
         [Range(0.5f, 1.5f)]
         public float windPitch = 1.0f;
-
-        [Header("Acoustics")]
-        [Tooltip("Residual muffled loudness deep inside multi-room basements or bunkers.")]
-        [Range(0f, 1f)]
-        public float minBunkerScale = 0.05f;
-
-        [Tooltip("Smoothing speed when transitioning between outdoor and indoor acoustics.")]
-        [Range(0.5f, 15f)]
-        public float acousticSmoothing = 3.5f;
 
 #if UNITY_EDITOR
         private void OnValidate()

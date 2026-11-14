@@ -84,7 +84,7 @@ namespace BlackHorizon.HorizonWeatherTime
                 {
                     ap.rainVolume = 0.0f;
                     ap.windVolume = 0.18f;
-                    ap.windGustStrength = 0.2f;
+                    ap.windGustStrength = 0.35f;
                 });
 
             CreatePreset("Template_Clear", "Clear", force,
@@ -126,8 +126,8 @@ namespace BlackHorizon.HorizonWeatherTime
                 "Audio", "Audio_Rain", force, ap =>
                 {
                     ap.rainVolume = 0.8f;
-                    ap.windVolume = 0.45f;
-                    ap.windGustStrength = 0.55f;
+                    ap.windVolume = 0.18f;
+                    ap.windGustStrength = 0.35f;
                 });
 
             CreatePreset("Template_Rain", "Rain", force,
@@ -162,8 +162,8 @@ namespace BlackHorizon.HorizonWeatherTime
                 "Audio", "Audio_Snow", force, ap =>
                 {
                     ap.rainVolume = 0.0f;
-                    ap.windVolume = 0.35f;
-                    ap.windGustStrength = 0.45f;
+                    ap.windVolume = 0.18f;
+                    ap.windGustStrength = 0.35f;
                     ap.windPitch = 0.9f;
                 });
 

@@ -51,14 +51,13 @@ namespace BlackHorizon.HorizonWeatherTime
         // UI State
         private bool _showAstronomy = false;
         private bool _showLayerOverrides = false;
+        private bool _showSpatialAudio = true;
+        private double _lastSpatialAudioRefresh;
 
         // VRChat State
         private bool _isVRChatProject = false;
         private bool _integrationActive = false;
         private string _statusMessage = "";
-
-        private static Type _cachedVRCSpatialAudioType;
-        private static bool _vrcSpatialAudioTypeSearched;
 
         private bool _lutMissing = false;
 
@@ -232,6 +231,7 @@ namespace BlackHorizon.HorizonWeatherTime
             // 2. SECTIONS
             DrawTimelineSection();
             DrawWeatherPresetsSection(discoveredModules);
+            DrawSpatialAudioSection();
             DrawCoreModulesSection();
 
             // 3. FOOTER
@@ -521,6 +521,161 @@ namespace BlackHorizon.HorizonWeatherTime
             GUILayout.Label($"P:{profileCount} M:{moduleCount}", EditorStyles.miniLabel, GUILayout.Width(100));
             GUI.color = Color.white;
             EditorGUILayout.EndHorizontal();
+        }
+
+        private void DrawSpatialAudioSection()
+        {
+            HorizonEditorUtils.DrawSectionHeader("SPATIAL AUDIO");
+
+            WeatherAudioManager manager = _weatherAudioManagerProp != null
+                ? _weatherAudioManagerProp.objectReferenceValue as WeatherAudioManager
+                : null;
+
+            if (manager == null)
+            {
+                EditorGUILayout.HelpBox("Weather audio manager was not found. Re-open the inspector to rebuild the rig.", MessageType.Warning);
+                return;
+            }
+
+            SpatialAudioSystem system = manager.audioSystem;
+            if (system == null)
+            {
+                EditorGUILayout.HelpBox(
+                    "The weather audio rig is not connected to a SpatialAudioSystem yet. Repair the rig to create it.",
+                    MessageType.Warning);
+
+                if (GUILayout.Button("Repair Audio Rig", GUILayout.Height(24)))
+                {
+                    CheckAndConfigureAudioRig(_target);
+                    _target.Refresh();
+                }
+                return;
+            }
+
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+
+            EditorGUILayout.BeginHorizontal();
+            GUILayout.Label("Weather stems → generic spatial emitters", EditorStyles.boldLabel);
+            GUILayout.FlexibleSpace();
+
+            if (GUILayout.Button("Select System", GUILayout.Width(95)))
+            {
+                Selection.activeGameObject = system.gameObject;
+                EditorGUIUtility.PingObject(system.gameObject);
+            }
+
+            if (GUILayout.Button("Open Visualizer", GUILayout.Width(110)))
+            {
+                SpatialAudioVisualizerWindow.Open(system);
+            }
+
+            if (GUILayout.Button("Repair Rig", GUILayout.Width(80)))
+            {
+                CheckAndConfigureAudioRig(_target);
+                _target.Refresh();
+            }
+
+            if (GUILayout.Button("Use Role Names", GUILayout.Width(110)))
+            {
+                NormalizeWeatherStemNames(manager);
+            }
+            EditorGUILayout.EndHorizontal();
+
+            _showSpatialAudio = EditorGUILayout.Foldout(_showSpatialAudio, "Radar & Live Mix", true);
+
+            if (_showSpatialAudio)
+            {
+                if (!Application.isPlaying && !system.IsEditorPreview)
+                {
+                    double now = EditorApplication.timeSinceStartup;
+                    if (now - _lastSpatialAudioRefresh > 0.1)
+                    {
+                        _lastSpatialAudioRefresh = now;
+                        system.EditorRefresh(SpatialAudioVisualizerGUI.GetPreviewListener(system));
+                    }
+                }
+
+                Rect radarRect = EditorGUILayout.GetControlRect(false, 240f);
+                SpatialAudioVisualizerGUI.DrawRadar(radarRect, system);
+                SpatialAudioVisualizerGUI.DrawLegend();
+
+                EditorGUILayout.Space(2f);
+                DrawWeatherEmitterSummary(manager);
+            }
+
+            EditorGUILayout.EndVertical();
+        }
+
+        private void DrawWeatherEmitterSummary(WeatherAudioManager manager)
+        {
+            if (manager.stemEmitters == null || manager.stemEmitters.Length == 0)
+            {
+                EditorGUILayout.HelpBox("No weather stems bound yet. Press Repair Rig to rebuild the stem-to-emitter mapping.", MessageType.Info);
+                return;
+            }
+
+            for (int i = 0; i < manager.stemEmitters.Length; i++)
+            {
+                SpatialAudioEmitter emitter = manager.stemEmitters[i];
+                int rawType = manager.stemTypes != null && i < manager.stemTypes.Length ? manager.stemTypes[i] : 0;
+                WeatherAudioStemType type = (WeatherAudioStemType)Mathf.Clamp(rawType, 0, 5);
+
+                EditorGUILayout.BeginHorizontal();
+
+                Color color = SpatialAudioVisualizerGUI.GetEmitterColor(emitter);
+                Rect dot = GUILayoutUtility.GetRect(10f, 16f);
+                if (Event.current.type == EventType.Repaint)
+                {
+                    EditorGUI.DrawRect(new Rect(dot.x + 1f, dot.y + 5f, 8f, 8f), color);
+                }
+
+                GUILayout.Label(SpatialAudioRigUtility.GetStemDisplayName(type), EditorStyles.miniLabel, GUILayout.Width(95f));
+
+                if (emitter != null)
+                {
+                    if (GUILayout.Button(emitter.name, EditorStyles.miniLabel))
+                    {
+                        Selection.activeGameObject = emitter.gameObject;
+                    }
+
+                    GUILayout.Label(SpatialAudioRigUtility.DescribePlacement(emitter), EditorStyles.miniLabel, GUILayout.Width(135f));
+
+                    Rect bar = GUILayoutUtility.GetRect(80f, 12f);
+                    if (Event.current.type == EventType.Repaint)
+                    {
+                        EditorGUI.DrawRect(new Rect(bar.x, bar.y + 4f, bar.width, 7f), new Color(0f, 0f, 0f, 0.35f));
+                        EditorGUI.DrawRect(new Rect(bar.x, bar.y + 4f, bar.width * Mathf.Clamp01(emitter.CurrentVolume), 7f), color);
+                    }
+
+                    GUILayout.Label(Mathf.RoundToInt(emitter.CurrentVolume * 100f) + "%", EditorStyles.miniLabel, GUILayout.Width(34f));
+                }
+                else
+                {
+                    GUILayout.Label("(missing)", EditorStyles.miniLabel);
+                }
+
+                EditorGUILayout.EndHorizontal();
+            }
+        }
+
+        private void NormalizeWeatherStemNames(WeatherAudioManager manager)
+        {
+            if (manager == null || manager.stemEmitters == null) return;
+
+            for (int i = 0; i < manager.stemEmitters.Length; i++)
+            {
+                SpatialAudioEmitter emitter = manager.stemEmitters[i];
+                if (emitter == null) continue;
+
+                int rawType = manager.stemTypes != null && i < manager.stemTypes.Length ? manager.stemTypes[i] : 0;
+                WeatherAudioStemType type = (WeatherAudioStemType)Mathf.Clamp(rawType, 0, 5);
+
+                Undo.RecordObject(emitter.gameObject, "Rename Weather Audio Stems");
+                emitter.gameObject.name = SpatialAudioRigUtility.GetStemObjectName(type);
+                EditorUtility.SetDirty(emitter.gameObject);
+            }
+
+            SceneView.RepaintAll();
         }
 
         private void DrawCoreModulesSection()
@@ -1220,8 +1375,9 @@ namespace BlackHorizon.HorizonWeatherTime
         }
 
         /**
-         * Auto-creates and configures the 2D stereo and 3D spatialized AudioSource rig under WeatherAudioManager,
-         * using a fresh SerializedObject so delayed editor callbacks remain safe after inspector disposal.
+         * Auto-creates and configures the weather emitter rig under WeatherAudioManager.
+         * The rig is now a set of generic SpatialAudioEmitter components driven by a
+         * SpatialAudioSystem, rather than a weather-specific hardcoded audio engine.
          *
          * @param target Target WeatherTimeSystem instance.
          */
@@ -1244,17 +1400,145 @@ namespace BlackHorizon.HorizonWeatherTime
                 }
             }
 
+            SpatialAudioSystem system = manager.GetComponent<SpatialAudioSystem>();
+            if (system == null)
+            {
+                system = manager.gameObject.AddComponent<SpatialAudioSystem>();
+                EditorUtility.SetDirty(system);
+            }
+
+            WeatherAudioStemType[] roles =
+            {
+                WeatherAudioStemType.RainExterior,
+                WeatherAudioStemType.RainInterior,
+                WeatherAudioStemType.RainOpening,
+                WeatherAudioStemType.RainRoof,
+                WeatherAudioStemType.WindBase,
+                WeatherAudioStemType.WindGust
+            };
+
+            // Legacy names are used only to reuse existing AudioSource children during
+            // migration. Runtime binding is by stemTypes, so objects can be renamed freely.
+            string[] legacyNames =
+            {
+                "Audio_Rain_Exterior_2D",
+                "Audio_Rain_Interior_2D",
+                "Audio_Rain_Opening_3D",
+                "Audio_Rain_Roof_3D",
+                "Audio_Wind_Base_2D",
+                "Audio_Wind_Gust_2D"
+            };
+
+            SpatialAudioPlacementMode[] placements =
+            {
+                SpatialAudioPlacementMode.ListenerRelative,
+                SpatialAudioPlacementMode.ListenerRelative,
+                SpatialAudioPlacementMode.OpeningDirection,
+                SpatialAudioPlacementMode.AboveListener,
+                SpatialAudioPlacementMode.ListenerRelative,
+                SpatialAudioPlacementMode.ListenerRelative
+            };
+
+            SpatialAudioCondition[] conditions =
+            {
+                SpatialAudioCondition.Outdoors,
+                SpatialAudioCondition.Indoors,
+                SpatialAudioCondition.Opening,
+                SpatialAudioCondition.UnderRoof,
+                SpatialAudioCondition.Outdoors,
+                SpatialAudioCondition.Outdoors
+            };
+
+            bool[] is3D =
+            {
+                false,
+                false,
+                true,
+                true,
+                false,
+                false
+            };
+
+            List<SpatialAudioEmitter> emitters = new List<SpatialAudioEmitter>();
+            SpatialAudioEmitter[] existingEmitters = manager.stemEmitters;
+            int[] existingTypes = manager.stemTypes;
+            bool[] used = new bool[existingEmitters != null ? existingEmitters.Length : 0];
+
+            for (int i = 0; i < roles.Length; i++)
+            {
+                SpatialAudioEmitter emitter = null;
+
+                // 1. Reuse a stem already bound to this role. This survives renames and
+                //    reordering because the binding is by stemTypes, not GameObject name.
+                if (existingEmitters != null && existingTypes != null)
+                {
+                    for (int j = 0; j < existingEmitters.Length && j < existingTypes.Length; j++)
+                    {
+                        if (used[j] || existingEmitters[j] == null) continue;
+                        if (existingTypes[j] != (int)roles[i]) continue;
+
+                        emitter = existingEmitters[j];
+                        used[j] = true;
+                        break;
+                    }
+                }
+
+                // 2. Legacy migration / new creation. EnsureEmitter reuses the existing
+                //    child (and its AudioSource) when a legacy or generic name is present,
+                //    adding the emitter component to old AudioSource-only rigs.
+                if (emitter == null)
+                {
+                    Transform legacyChild = manager.transform.Find(legacyNames[i]);
+                    string objectName = legacyChild != null
+                        ? legacyNames[i]
+                        : SpatialAudioRigUtility.GetStemObjectName(roles[i]);
+
+                    emitter = SpatialAudioRigUtility.EnsureEmitter(
+                        manager.transform, objectName, placements[i], conditions[i], is3D[i]);
+                }
+
+                if (emitter != null)
+                {
+                    // Old generated names are normalized to readable role names. Custom
+                    // user names are left untouched.
+                    SpatialAudioRigUtility.NormalizeStemName(emitter, roles[i]);
+
+                    // New fields need explicit defaults on already-existing emitters.
+                    emitter.useOpeningDepthDistance = roles[i] == WeatherAudioStemType.RainOpening;
+                    emitter.useSystemCeilingHeight = roles[i] == WeatherAudioStemType.RainRoof;
+                    emitter.useDistanceAttenuation = is3D[i];
+
+                    if (!is3D[i])
+                    {
+                        emitter.minDistance = 0f;
+                        emitter.maxDistance = 1f;
+                    }
+
+                    if (roles[i] == WeatherAudioStemType.RainRoof && emitter.maxDistance < 20f)
+                    {
+                        // High ceilings should not hard-cut the roof patter at 16 m.
+                        emitter.maxDistance = 30f;
+                    }
+
+                    if (roles[i] == WeatherAudioStemType.RainOpening && emitter.maxDistance < 20f)
+                    {
+                        // The opening source can sit up to openingProbeDistance away.
+                        emitter.maxDistance = 20f;
+                    }
+
+                    SpatialAudioRigUtility.EnsureSource(emitter, false);
+                }
+
+                emitters.Add(emitter);
+            }
+
             using (SerializedObject managerSO = new SerializedObject(manager))
             {
                 managerSO.Update();
 
                 bool dirty = false;
-                dirty |= EnsureAudioSourceField(managerSO, "rainExterior2D", manager.transform, "Audio_Rain_Exterior_2D", false);
-                dirty |= EnsureAudioSourceField(managerSO, "rainInterior2D", manager.transform, "Audio_Rain_Interior_2D", false);
-                dirty |= EnsureAudioSourceField(managerSO, "windBase2D",     manager.transform, "Audio_Wind_Base_2D",     false);
-                dirty |= EnsureAudioSourceField(managerSO, "windGust2D",     manager.transform, "Audio_Wind_Gust_2D",     false);
-                dirty |= EnsureAudioSourceField(managerSO, "rainOpening3D",  manager.transform, "Audio_Rain_Opening_3D",  true);
-                dirty |= EnsureAudioSourceField(managerSO, "rainRoof3D",     manager.transform, "Audio_Rain_Roof_3D",     true);
+                dirty |= EnsureObjectReference(managerSO, "audioSystem", system);
+                dirty |= EnsureStemArrays(managerSO, emitters, roles);
 
                 if (dirty)
                 {
@@ -1263,18 +1547,85 @@ namespace BlackHorizon.HorizonWeatherTime
                     SyncUdonProxy(manager);
                 }
             }
+
+            // Fallback for the first import where UdonSharp has not exposed the new
+            // array fields to SerializedObject yet.
+            if (manager.stemEmitters == null || manager.stemTypes == null ||
+                manager.stemEmitters.Length != emitters.Count)
+            {
+                int[] types = new int[roles.Length];
+                for (int i = 0; i < roles.Length; i++) types[i] = (int)roles[i];
+
+                manager.stemEmitters = emitters.ToArray();
+                manager.stemTypes = types;
+                EditorUtility.SetDirty(manager);
+                SyncUdonProxy(manager);
+            }
+
+            SpatialAudioRigUtility.SyncEmitters(system);
+            SyncUdonProxy(system);
+
+            EditorUtility.SetDirty(manager);
+            EditorUtility.SetDirty(system);
         }
 
-        private bool EnsureAudioSourceField(SerializedObject managerSO, string propName, Transform parent, string objName, bool is3D)
+        private bool EnsureObjectReference(SerializedObject serializedObject, string propertyName, UnityEngine.Object value)
         {
-            SerializedProperty prop = managerSO.FindProperty(propName);
-            AudioSource src = EnsureAudioSource(parent, objName, is3D);
-            if (prop != null && prop.objectReferenceValue != src)
+            SerializedProperty property = serializedObject.FindProperty(propertyName);
+            if (property != null && property.objectReferenceValue != value)
             {
-                prop.objectReferenceValue = src;
+                property.objectReferenceValue = value;
                 return true;
             }
             return false;
+        }
+
+        private bool EnsureStemArrays(
+            SerializedObject managerSO,
+            List<SpatialAudioEmitter> emitters,
+            WeatherAudioStemType[] roles)
+        {
+            SerializedProperty emittersProp = managerSO.FindProperty("stemEmitters");
+            SerializedProperty typesProp = managerSO.FindProperty("stemTypes");
+
+            if (emittersProp == null || typesProp == null) return false;
+
+            bool dirty = false;
+
+            if (emittersProp.arraySize != emitters.Count)
+            {
+                emittersProp.arraySize = emitters.Count;
+                dirty = true;
+            }
+
+            for (int i = 0; i < emitters.Count; i++)
+            {
+                SerializedProperty element = emittersProp.GetArrayElementAtIndex(i);
+                if (element.objectReferenceValue != emitters[i])
+                {
+                    element.objectReferenceValue = emitters[i];
+                    dirty = true;
+                }
+            }
+
+            if (typesProp.arraySize != roles.Length)
+            {
+                typesProp.arraySize = roles.Length;
+                dirty = true;
+            }
+
+            for (int i = 0; i < roles.Length; i++)
+            {
+                SerializedProperty element = typesProp.GetArrayElementAtIndex(i);
+                int roleValue = (int)roles[i];
+                if (element.intValue != roleValue)
+                {
+                    element.intValue = roleValue;
+                    dirty = true;
+                }
+            }
+
+            return dirty;
         }
 
         /**
@@ -1316,92 +1667,6 @@ namespace BlackHorizon.HorizonWeatherTime
                 copySimple?.Invoke(null, new object[] { proxy });
             }
             catch { }
-        }
-
-        private AudioSource EnsureAudioSource(Transform parent, string objName, bool is3D)
-        {
-            Transform child = parent.Find(objName);
-            if (child == null)
-            {
-                GameObject go = new GameObject(objName);
-                go.transform.SetParent(parent);
-                go.transform.localPosition = Vector3.zero;
-                child = go.transform;
-            }
-
-            AudioSource src = child.GetComponent<AudioSource>();
-            if (src == null) src = child.gameObject.AddComponent<AudioSource>();
-
-            src.playOnAwake = false;
-            src.loop = true;
-            src.volume = 0f;
-            src.dopplerLevel = 0f;
-            src.spatialBlend = is3D ? 1f : 0f;
-            src.spatialize = is3D;
-            src.rolloffMode = AudioRolloffMode.Linear;
-            src.minDistance = is3D ? 1.0f : 1000f;
-            src.maxDistance = is3D ? 16.0f : 10000f;
-            src.spread = is3D ? 80f : 0f;
-
-            ConfigureVRCSpatialAudioIfPresent(child.gameObject, is3D);
-            EditorUtility.SetDirty(src);
-            return src;
-        }
-
-        /**
-         * Resolves the concrete non-abstract VRCSpatialAudioSource component type across loaded assemblies.
-         *
-         * @return Concrete VRCSpatialAudioSource Type, or null if the VRChat SDK is not installed.
-         */
-        private static Type GetVRCSpatialAudioType()
-        {
-            if (_vrcSpatialAudioTypeSearched) return _cachedVRCSpatialAudioType;
-            _vrcSpatialAudioTypeSearched = true;
-
-            _cachedVRCSpatialAudioType =
-                Type.GetType("VRC.SDK3.Components.VRCSpatialAudioSource, VRCSDK3") ??
-                Type.GetType("VRC.SDK3.Components.VRCSpatialAudioSource, VRC.SDK3");
-
-            if (_cachedVRCSpatialAudioType == null || _cachedVRCSpatialAudioType.IsAbstract)
-            {
-                _cachedVRCSpatialAudioType = null;
-                foreach (Assembly asm in AppDomain.CurrentDomain.GetAssemblies())
-                {
-                    Type candidate = asm.GetType("VRC.SDK3.Components.VRCSpatialAudioSource");
-                    if (candidate != null && !candidate.IsAbstract)
-                    {
-                        _cachedVRCSpatialAudioType = candidate;
-                        break;
-                    }
-                }
-            }
-
-            return _cachedVRCSpatialAudioType;
-        }
-
-        private void ConfigureVRCSpatialAudioIfPresent(GameObject go, bool enableSpatialization)
-        {
-            Type vrcSpatialType = GetVRCSpatialAudioType();
-            if (vrcSpatialType == null || vrcSpatialType.IsAbstract) return;
-
-            Component comp = go.GetComponent(vrcSpatialType);
-            if (comp == null) comp = go.AddComponent(vrcSpatialType);
-            if (comp == null) return;
-
-            SerializedObject so = new SerializedObject(comp);
-            SerializedProperty gainProp = so.FindProperty("Gain");
-            SerializedProperty nearProp = so.FindProperty("Near");
-            SerializedProperty farProp = so.FindProperty("Far");
-            SerializedProperty curveProp = so.FindProperty("UseAudioSourceVolumeCurve");
-            SerializedProperty spatProp = so.FindProperty("EnableSpatialization");
-
-            if (gainProp != null) gainProp.floatValue = 0f;
-            if (nearProp != null) nearProp.floatValue = 0f;
-            if (farProp != null) farProp.floatValue = enableSpatialization ? 16f : 10000f;
-            if (curveProp != null) curveProp.boolValue = true;
-            if (spatProp != null) spatProp.boolValue = enableSpatialization;
-
-            so.ApplyModifiedProperties();
         }
 
         // --- SUB-FUNCTIONS ---

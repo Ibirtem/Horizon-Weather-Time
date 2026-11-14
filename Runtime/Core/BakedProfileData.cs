@@ -157,8 +157,6 @@ namespace BlackHorizon.HorizonWeatherTime
         public float windGustSpeed = 0.25f;
         public float windInteriorScale = 0.25f;
         public float windPitch = 1.0f;
-        public float minBunkerScale = 0.05f;
-        public float acousticSmoothing = 3.5f;
 
         // =====================================================
         // EDITOR-ONLY: Copy logic
@@ -295,8 +293,6 @@ namespace BlackHorizon.HorizonWeatherTime
                 windGustSpeed = ap.windGustSpeed;
                 windInteriorScale = ap.windInteriorScale;
                 windPitch = ap.windPitch;
-                minBunkerScale = ap.minBunkerScale;
-                acousticSmoothing = ap.acousticSmoothing;
                 return;
             }
         }

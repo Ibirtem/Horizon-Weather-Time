@@ -25,6 +25,7 @@ The system is being developed and tested on the latest versions that were releva
 - **Modular Weather States:** Easily mix and match weather conditions using reusable Profiles. You can smoothly transition the entire global weather, or independently override specific layers (like rolling in storm clouds while keeping the sun shining).
 - **Procedural Atmospherics:** A custom, optimized skybox shader that attempts to replicate real atmospheric phenomena. Includes Rayleigh & Mie scattering, physically-based Sun and Moon rendering, realistic starry skies, and raymarched volumetric clouds.
 - **Smart Dynamic Particles:** The weather particle system follows the player while automatically respecting roofs and overhangs using **depth-based occlusion**. Zero manual setup required — no more placing "dry zone" triggers by hand. Your interiors stay dry automatically.
+- **Standalone Spatial Audio:** A general-purpose positional audio environment with ceiling/wall/opening probes, swappable emitters, radar visualization, and live editor preview. Weather uses it, but it is not tied to weather.
 - **Built-in Generation Tools:** Includes Editor tools to generate volumetric cloud noises, Worley weather maps, and even accurate Star Maps based on the real-world **HYG Database**. _(Note: The system handles generating and assigning these automatically during setup, so manual work is optional!)_
 - **VRChat Ready:** Works out of the box with UdonSharp. All needed weather data is pre-baked at build time — no runtime overhead. Supports local client-side weather overrides.
 
@@ -53,6 +54,25 @@ Horizon uses a Master-Submodule architecture. You define specific pieces of your
 - `FogProfile`: Global fog settings seamlessly blended into the skybox horizon.
 - `EffectsProfile`: The physical weather particle prefab and its volume boundaries.
 - `MoonProfile`: Moon texture, angular size, and visual tint.
+
+### Spatial Audio (Standalone)
+
+Weather audio is split into two layers:
+
+- `AudioProfile` (Weather Audio Profile) stores **what** plays: rain/wind stems, pitch, and mix levels.
+- `SpatialAudioSystem` decides **where and how** it plays: listener tracking, ceiling/wall/opening probes, positioning, acoustic gating, and volume smoothing.
+
+This means the spatial layer is reusable outside of weather. Add a standalone system from `GameObject -> Horizon -> Spatial Audio System`, then add emitters (orbiting, overhead, opening-following, fixed-world points, or 2D beds). Select the system to get the radar inspector; use `Tools -> Horizon -> Spatial Audio -> Open Visualizer` for the large view, or toggle the scene view overlay from the same menu.
+
+Every emitter can use its own clip and condition (`Always`, `Outdoors`, `Indoors`, `UnderRoof`, `Opening`, `Sheltered`). Reusable `SpatialAudioPreset` assets let you carry a spatial behavior between scenes. The weather rig is just six of these emitters driven by `WeatherAudioManager`.
+
+Distance attenuation belongs to the spatial system: the raw AudioSource curve is flattened to avoid double attenuation, and `Min Distance` / `Max Distance` / `Rolloff Mode` on the emitter drive the mix. The inspector meters therefore show the volume you actually hear. Listener-following placements (orbit, overhead, opening) keep a fixed distance by design; use `Fixed World` for sources that get quieter as you walk away.
+
+Weather stems are bound by **role** (`stemTypes`), not by GameObject names, so emitters can be renamed or reordered freely. New stems get readable role names such as `Rain - Exterior`, `Rain - Opening`, and `Wind - Gust`; old generated names are normalized on repair, while custom names are preserved. The standalone Add Emitter menu uses the same readable convention (`Orbiting Source`, `Roof Source`, `Opening Source`, `Wall Source`, `2D Bed`). The system also estimates **opening depth/proximity** by probing for the edge of the current ceiling and for door/window lintels. That proximity drives the outdoor-rain bleed, the directional opening emitter's distance, and the wind crossfade, which removes the hard volume jump when stepping through a doorway. The overhead roof emitter follows the probed ceiling height, so higher ceilings become farther and quieter.
+
+Roof exposure is continuous: beyond `Single Roof Thickness` it fades over `Roof Thickness Falloff` instead of switching to silence. Beams or joists above the room therefore do not kill the patter abruptly; a large empty gap still fades it out.
+
+Wind uses a shared master level and gust strength by default, so rain/snow profiles do not get louder wind automatically. Enable `Use Profile Wind Volume` / `Use Profile Wind Gust Strength` on `WeatherAudioManager` if a profile should override it.
 
 ---
 
