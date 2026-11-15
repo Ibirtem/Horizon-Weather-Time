@@ -10,24 +10,25 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: eac724f7453df54438554220c6e4d05f, type: 3}
-  m_Name: Audio_Rain
+  m_Name: 
   m_EditorClassIdentifier: 
   enabled: 1
   masterVolume: 1
-  rainExteriorStereoClip: {fileID: 0}
-  rainExteriorMonoClip: {fileID: 0}
-  rainInteriorStereoClip: {fileID: 0}
-  rainRoofMonoClip: {fileID: 0}
-  windBaseStereoClip: {fileID: 0}
-  windGustStereoClip: {fileID: 0}
+  rainExteriorStereoClip: {fileID: 8300000, guid: d9a13136471c028438324e60c9104caa,
+    type: 3}
+  rainExteriorMonoClip: {fileID: 8300000, guid: 02e7ddab7c8524c4aabe01f270ad8845,
+    type: 3}
+  rainInteriorStereoClip: {fileID: 8300000, guid: b9b2a01cb36177c42be5137c73a80ccc,
+    type: 3}
+  rainRoofMonoClip: {fileID: 8300000, guid: 5bc758387f86f0c4588b6e069232c6fe, type: 3}
+  windBaseStereoClip: {fileID: 8300000, guid: 30e9cdd93f2e8d94eb825bb511b43e6b, type: 3}
+  windGustStereoClip: {fileID: 8300000, guid: 21dc56fd5a1149a4b8de39d98533d8d4, type: 3}
   rainVolume: 0.8
   rainInteriorScale: 0.45
   rainRoofScale: 0.65
   rainPitch: 1
-  windVolume: 0.45
-  windGustStrength: 0.55
+  windVolume: 0.18
+  windGustStrength: 0.35
   windGustSpeed: 0.25
   windInteriorScale: 0.25
   windPitch: 1
-  minBunkerScale: 0.05
-  acousticSmoothing: 3.5

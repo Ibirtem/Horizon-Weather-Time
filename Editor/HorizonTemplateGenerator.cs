@@ -74,7 +74,30 @@ namespace BlackHorizon.HorizonWeatherTime
                 "Clouds", "Clouds_Clear", force);
 
             var fClear = CreateModule<FogProfile>(
-                "Fog", "Fog_Clear", force);
+                "Fog", "Fog_Clear", force, fp =>
+                {
+                    fp.renderMode = HorizonFogMode.AnalyticalAtmospheric;
+                    fp.fogMode = FogMode.ExponentialSquared;
+
+                    // Light, far atmospheric haze: the valley stays readable.
+                    fp.dayColor = new Color(0.68f, 0.76f, 0.88f);
+                    fp.nightColor = new Color(0.04f, 0.05f, 0.10f);
+                    fp.dayZenithColor = new Color(0.46f, 0.56f, 0.70f);
+                    fp.nightZenithColor = new Color(0.02f, 0.025f, 0.05f);
+
+                    fp.density = 0.0003f;
+                    fp.heightDensity = 0.0008f;
+                    fp.heightFalloff = 0.03f;
+                    fp.heightBaseOffset = 0f;
+                    fp.startDistance = 20f;
+                    fp.skyHorizonHeight = 0.14f;
+                    fp.maxOpacity = 0.85f;
+                    fp.skyboxBlendIntegrity = 1f;
+
+                    fp.sunInscatterColor = new Color(0.95f, 0.92f, 0.85f);
+                    fp.sunInscatterIntensity = 0.22f;
+                    fp.sunInscatterPower = 8f;
+                });
 
             var eClear = CreateModule<EffectsProfile>(
                 "Effects", "Effects_Clear", force);
@@ -114,7 +137,29 @@ namespace BlackHorizon.HorizonWeatherTime
                 });
 
             var fRain = CreateModule<FogProfile>(
-                "Fog", "Fog_Rain", force);
+                "Fog", "Fog_Rain", force, fp =>
+                {
+                    fp.renderMode = HorizonFogMode.AnalyticalAtmospheric;
+                    fp.fogMode = FogMode.ExponentialSquared;
+
+                    fp.dayColor = new Color(0.34f, 0.39f, 0.45f);
+                    fp.dayZenithColor = new Color(0.20f, 0.24f, 0.30f);
+                    fp.nightColor = new Color(0.03f, 0.04f, 0.06f);
+                    fp.nightZenithColor = new Color(0.015f, 0.02f, 0.035f);
+
+                    fp.density = 0.0022f;
+                    fp.heightDensity = 0.0085f;
+                    fp.heightFalloff = 0.035f;
+                    fp.heightBaseOffset = 0f;
+                    fp.startDistance = 4f;
+                    fp.skyHorizonHeight = 0.35f;
+                    fp.maxOpacity = 0.96f;
+                    fp.skyboxBlendIntegrity = 1f;
+
+                    fp.sunInscatterColor = new Color(0.75f, 0.78f, 0.82f);
+                    fp.sunInscatterIntensity = 0.14f;
+                    fp.sunInscatterPower = 5f;
+                });
 
             var eRain = CreateModule<EffectsProfile>(
                 "Effects", "Effects_Rain", force, ep =>
@@ -150,7 +195,30 @@ namespace BlackHorizon.HorizonWeatherTime
                 "Clouds", "Clouds_Overcast", force);
 
             var fSnow = CreateModule<FogProfile>(
-                "Fog", "Fog_Snow", force);
+                "Fog", "Fog_Snow", force, fp =>
+                {
+                    fp.renderMode = HorizonFogMode.AnalyticalAtmospheric;
+                    fp.fogMode = FogMode.ExponentialSquared;
+
+                    // Cold, dense whiteout haze.
+                    fp.dayColor = new Color(0.58f, 0.63f, 0.70f);
+                    fp.dayZenithColor = new Color(0.40f, 0.45f, 0.52f);
+                    fp.nightColor = new Color(0.05f, 0.06f, 0.08f);
+                    fp.nightZenithColor = new Color(0.025f, 0.03f, 0.045f);
+
+                    fp.density = 0.0045f;
+                    fp.heightDensity = 0.006f;
+                    fp.heightFalloff = 0.04f;
+                    fp.heightBaseOffset = 0f;
+                    fp.startDistance = 5f;
+                    fp.skyHorizonHeight = 0.30f;
+                    fp.maxOpacity = 0.95f;
+                    fp.skyboxBlendIntegrity = 1f;
+
+                    fp.sunInscatterColor = new Color(0.90f, 0.92f, 0.95f);
+                    fp.sunInscatterIntensity = 0.20f;
+                    fp.sunInscatterPower = 6f;
+                });
 
             var eSnow = CreateModule<EffectsProfile>(
                 "Effects", "Effects_Snow", force, ep =>
@@ -429,6 +497,22 @@ namespace BlackHorizon.HorizonWeatherTime
                 return packageRoot + "/Internal/Templates";
             }
             return "Assets/Horizon Weather & Time/Internal/Templates";
+        }
+
+        /// <summary>
+        /// Regenerates Fog template assets in Internal/Templates when upgrading from legacy fog settings.
+        /// </summary>
+        public static void EnsureModernFogTemplates()
+        {
+            string fogRainPath = $"{MODULES_DIR}/Fog/Fog_Rain.asset";
+            FogProfile existingRain = AssetDatabase.LoadAssetAtPath<FogProfile>(fogRainPath);
+            if (existingRain != null &&
+                Mathf.Approximately(existingRain.dayColor.r, 0.7f) &&
+                Mathf.Approximately(existingRain.dayColor.g, 0.8f) &&
+                Mathf.Approximately(existingRain.dayColor.b, 1.0f))
+            {
+                GenerateTemplates(true);
+            }
         }
     }
 }

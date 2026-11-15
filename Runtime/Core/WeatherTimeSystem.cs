@@ -180,6 +180,7 @@ namespace BlackHorizon.HorizonWeatherTime
         [Header("System References")]
         [SerializeField] private LightingManager _lightingManager;
         [SerializeField] private SkyManager _skyManager;
+        [SerializeField] private FogManager _fogManager;
         [SerializeField] private WeatherEffectsManager _weatherEffectsManager;
         [SerializeField] private WeatherAudioManager _weatherAudioManager;
         [SerializeField] private ReflectionManager _reflectionManager;
@@ -209,6 +210,7 @@ namespace BlackHorizon.HorizonWeatherTime
             
             _lightingManager = FindOrCreateManager<LightingManager>("Lighting");
             _skyManager = FindOrCreateManager<SkyManager>("Sky");
+            _fogManager = FindOrCreateManager<FogManager>("Fog");
             _weatherEffectsManager = FindOrCreateManager<WeatherEffectsManager>("Effects");
             _weatherAudioManager = FindOrCreateManager<WeatherAudioManager>("Audio");
             _reflectionManager = FindOrCreateManager<ReflectionManager>("Reflections");
@@ -694,42 +696,43 @@ namespace BlackHorizon.HorizonWeatherTime
         }
 
         /// <summary>
-        /// Applies fog settings based on the active fog index, blending it dynamically with the time of day.
+        /// Resolves the current time-of-day fog state and delegates publication to FogManager.
+        /// FogManager owns both the analytical height fog and the legacy RenderSettings.fog path.
         /// </summary>
+        /// <param name="fp">Resolved (possibly interpolated) fog profile snapshot.</param>
+        /// <param name="lp">Resolved lighting profile snapshot (provides the reference sun intensity).</param>
+        /// <returns>Current horizon fog color for the skybox/cloud fallback path.</returns>
         private Color ApplyFog(BakedProfileData fp, BakedProfileData lp)
         {
-            Color currentFogColor = Color.black;
-
-            if (fp != null && fp.fogEnabled)
-            {
-                var sunLight = _lightingManager.SunLight;
-                if (sunLight == null)
-                {
-                    RenderSettings.fog = false;
-                    return Color.black;
-                }
-
-                float sunHeight = -sunLight.transform.forward.y;
-                float fogDayFactor = Mathf.InverseLerp(-0.1f, 0.1f, sunHeight);
-                float sunIntensityFactor = lp.sunIntensity > 0
-                    ? (sunLight.intensity / lp.sunIntensity) : 0;
-
-                float finalFogMix = Mathf.Clamp01(fogDayFactor * sunIntensityFactor);
-                currentFogColor = Color.Lerp(fp.fogNightColor, fp.fogDayColor, finalFogMix);
-
-                RenderSettings.fog = true;
-                RenderSettings.fogMode = (FogMode)fp.fogMode;
-                RenderSettings.fogColor = currentFogColor;
-                RenderSettings.fogDensity = fp.fogDensity;
-                RenderSettings.fogStartDistance = fp.fogStartDistance;
-                RenderSettings.fogEndDistance = fp.fogEndDistance;
-            }
-            else
+            if (_fogManager == null)
             {
                 RenderSettings.fog = false;
+                return Color.black;
             }
 
-            return currentFogColor;
+            var sunLight = _lightingManager != null ? _lightingManager.SunLight : null;
+            var moonLight = _lightingManager != null ? _lightingManager.MoonLight : null;
+
+            if (fp == null || !fp.fogEnabled || sunLight == null)
+            {
+                _fogManager.UpdateFog(null, Vector3.up, Vector3.up, 0f, 0f, Color.white, Color.white);
+                return Color.black;
+            }
+
+            float sunHeight = -sunLight.transform.forward.y;
+            float fogDayFactor = Mathf.InverseLerp(-0.1f, 0.1f, sunHeight);
+            float sunIntensityFactor = (lp != null && lp.sunIntensity > 0f)
+                ? (sunLight.intensity / lp.sunIntensity) : 0f;
+
+            // Direction TO the light is the inverse of the light's forward vector.
+            Vector3 sunDirToLight = -sunLight.transform.forward;
+            Vector3 moonDirToLight = moonLight != null ? -moonLight.transform.forward : sunDirToLight;
+            Color moonLightColor = moonLight != null ? moonLight.color : sunLight.color;
+
+            return _fogManager.UpdateFog(
+                fp, sunDirToLight, moonDirToLight,
+                fogDayFactor, sunIntensityFactor,
+                sunLight.color, moonLightColor);
         }
 
         /// <summary>
@@ -1253,13 +1256,24 @@ namespace BlackHorizon.HorizonWeatherTime
         private void LerpFogFields(BakedProfileData r, BakedProfileData a, BakedProfileData b, float t)
         {
             r.fogEnabled = t < 0.5f ? a.fogEnabled : b.fogEnabled;
+            r.fogRenderMode = t < 0.5f ? a.fogRenderMode : b.fogRenderMode;
             r.fogNightColor = Color.Lerp(a.fogNightColor, b.fogNightColor, t);
             r.fogDayColor = Color.Lerp(a.fogDayColor, b.fogDayColor, t);
+            r.fogNightZenithColor = Color.Lerp(a.fogNightZenithColor, b.fogNightZenithColor, t);
+            r.fogDayZenithColor = Color.Lerp(a.fogDayZenithColor, b.fogDayZenithColor, t);
             r.fogDensity = Mathf.Lerp(a.fogDensity, b.fogDensity, t);
+            r.fogHeightDensity = Mathf.Lerp(a.fogHeightDensity, b.fogHeightDensity, t);
+            r.fogHeightFalloff = Mathf.Lerp(a.fogHeightFalloff, b.fogHeightFalloff, t);
+            r.fogHeightBaseOffset = Mathf.Lerp(a.fogHeightBaseOffset, b.fogHeightBaseOffset, t);
+            r.fogMaxOpacity = Mathf.Lerp(a.fogMaxOpacity, b.fogMaxOpacity, t);
             r.fogStartDistance = Mathf.Lerp(a.fogStartDistance, b.fogStartDistance, t);
             r.fogEndDistance = Mathf.Lerp(a.fogEndDistance, b.fogEndDistance, t);
             r.fogMode = t < 0.5f ? a.fogMode : b.fogMode;
+            r.fogSkyHorizonHeight = Mathf.Lerp(a.fogSkyHorizonHeight, b.fogSkyHorizonHeight, t);
             r.fogSkyBlend = Mathf.Lerp(a.fogSkyBlend, b.fogSkyBlend, t);
+            r.fogSunInscatterColor = Color.Lerp(a.fogSunInscatterColor, b.fogSunInscatterColor, t);
+            r.fogSunInscatterIntensity = Mathf.Lerp(a.fogSunInscatterIntensity, b.fogSunInscatterIntensity, t);
+            r.fogSunInscatterPower = Mathf.Lerp(a.fogSunInscatterPower, b.fogSunInscatterPower, t);
         }
 
         // --- Effects ---

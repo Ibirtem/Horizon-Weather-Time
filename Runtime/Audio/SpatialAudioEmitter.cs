@@ -446,11 +446,6 @@ namespace BlackHorizon.HorizonWeatherTime
             if (Mathf.Abs(_source.volume - targetVol) > 0.0002f) _source.volume = targetVol;
             if (Mathf.Abs(_source.pitch - playPitch) > 0.0005f) _source.pitch = playPitch;
 
-            // A tiny non-zero floor keeps looped sources alive in systems that cull
-            // zero-volume voices. It is about -80 dB, effectively silent.
-            _source.volume = loop ? Mathf.Max(0.0001f, clampedVolume) : clampedVolume;
-            _source.pitch = playPitch;
-
             if (loop)
             {
                 // Keep looping ambience running at zero volume instead of stopping and

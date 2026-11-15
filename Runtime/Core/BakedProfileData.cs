@@ -118,13 +118,24 @@ namespace BlackHorizon.HorizonWeatherTime
         // =====================================================
         [Header("Fog")]
         public bool fogEnabled = true;
+        public int fogRenderMode = 0;
         public int fogMode = 2;
         public Color fogDayColor = new Color(0.7f, 0.8f, 1f);
         public Color fogNightColor = new Color(0.05f, 0.05f, 0.15f);
+        public Color fogDayZenithColor = new Color(0.32f, 0.38f, 0.46f);
+        public Color fogNightZenithColor = new Color(0.02f, 0.03f, 0.07f);
         public float fogDensity = 0.002f;
+        public float fogHeightDensity = 0.004f;
+        public float fogHeightFalloff = 0.045f;
+        public float fogHeightBaseOffset = 0f;
+        public float fogMaxOpacity = 1f;
         public float fogStartDistance = 10f;
         public float fogEndDistance = 250f;
+        public float fogSkyHorizonHeight = 0.25f;
         public float fogSkyBlend = 1.0f;
+        public Color fogSunInscatterColor = new Color(0.85f, 0.85f, 0.8f);
+        public float fogSunInscatterIntensity = 0.25f;
+        public float fogSunInscatterPower = 6f;
 
         // =====================================================
         // WEATHER EFFECTS
@@ -254,13 +265,24 @@ namespace BlackHorizon.HorizonWeatherTime
             if (module is FogProfile fp)
             {
                 fogEnabled = fp.enabled;
+                fogRenderMode = (int)fp.renderMode;
                 fogMode = (int)fp.fogMode;
                 fogDayColor = fp.dayColor;
                 fogNightColor = fp.nightColor;
+                fogDayZenithColor = fp.dayZenithColor;
+                fogNightZenithColor = fp.nightZenithColor;
                 fogDensity = fp.density;
+                fogHeightDensity = fp.heightDensity;
+                fogHeightFalloff = fp.heightFalloff;
+                fogHeightBaseOffset = fp.heightBaseOffset;
+                fogMaxOpacity = fp.maxOpacity;
                 fogStartDistance = fp.startDistance;
                 fogEndDistance = fp.endDistance;
+                fogSkyHorizonHeight = fp.skyHorizonHeight;
                 fogSkyBlend = fp.skyboxBlendIntegrity;
+                fogSunInscatterColor = fp.sunInscatterColor;
+                fogSunInscatterIntensity = fp.sunInscatterIntensity;
+                fogSunInscatterPower = fp.sunInscatterPower;
                 return;
             }
 

@@ -17,15 +17,20 @@ MonoBehaviour:
   curlNoiseTexture: {fileID: 0}
   enabled: 1
   cloudNoiseTexture: {fileID: 0}
+  thickness: 2500
   altitude: 2
   scale: 1
   coverage: 0.6
   density: 1.4
   detailAmount: 0.4
   wispiness: 0.1
+  curlStrength: 0.07
   windSpeed: {x: 0.002, y: 0.001}
   baseColor: {r: 0.95, g: 0.95, b: 0.95, a: 1}
   shadowColor: {r: 0.35, g: 0.4, b: 0.5, a: 1}
+  silverLining: 1
+  multiScattering: 1
+  ambientIntensity: 1
   lightScattering: 1.5
   cirrusNoiseTexture: {fileID: 0}
   cirrusCoverage: 0.67

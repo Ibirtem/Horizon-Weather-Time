@@ -44,6 +44,7 @@ namespace BlackHorizon.HorizonWeatherTime
         // System Refs
         private SerializedProperty _lightingManagerProp;
         private SerializedProperty _skyManagerProp;
+        private SerializedProperty _fogManagerProp;
         private SerializedProperty _weatherEffectsManagerProp;
         private SerializedProperty _weatherAudioManagerProp;
         private SerializedProperty _reflectionManagerProp;
@@ -100,6 +101,7 @@ namespace BlackHorizon.HorizonWeatherTime
 
             AssignManagerIfMissing("_lightingManager", typeof(LightingManager));
             AssignManagerIfMissing("_skyManager", typeof(SkyManager));
+            EnsureFogManager();
             AssignManagerIfMissing("_weatherEffectsManager", typeof(WeatherEffectsManager));
 
             if (_target.GetComponentInChildren<WeatherAudioManager>(true) == null)
@@ -125,6 +127,25 @@ namespace BlackHorizon.HorizonWeatherTime
             {
                 prop.objectReferenceValue = _target.GetComponentInChildren(managerType);
             }
+        }
+
+        /// <summary>
+        /// Finds (or creates) the dedicated "Fog" container that hosts FogManager.
+        /// The fog pipeline lives in its own component to keep a single responsibility.
+        /// </summary>
+        private void EnsureFogManager()
+        {
+            FogManager fogManager = _target.GetComponentInChildren<FogManager>(true);
+            if (fogManager == null && !Application.isPlaying)
+            {
+                GameObject fogObj = new GameObject("Fog");
+                fogObj.transform.SetParent(_target.transform);
+                fogObj.transform.localPosition = Vector3.zero;
+                fogManager = fogObj.AddComponent<FogManager>();
+                EditorUtility.SetDirty(fogManager);
+            }
+
+            AssignManagerIfMissing("_fogManager", typeof(FogManager));
         }
 
         /// <summary>
@@ -163,6 +184,7 @@ namespace BlackHorizon.HorizonWeatherTime
             // Modules
             _lightingManagerProp = serializedObject.FindProperty("_lightingManager");
             _skyManagerProp = serializedObject.FindProperty("_skyManager");
+            _fogManagerProp = serializedObject.FindProperty("_fogManager");
             _weatherEffectsManagerProp = serializedObject.FindProperty("_weatherEffectsManager");
             _weatherAudioManagerProp = serializedObject.FindProperty("_weatherAudioManager");
             _reflectionManagerProp = serializedObject.FindProperty("_reflectionManager");
@@ -684,6 +706,7 @@ namespace BlackHorizon.HorizonWeatherTime
             GUI.enabled = false;
             EditorGUILayout.PropertyField(_lightingManagerProp);
             EditorGUILayout.PropertyField(_skyManagerProp);
+            EditorGUILayout.PropertyField(_fogManagerProp);
             EditorGUILayout.PropertyField(_weatherEffectsManagerProp);
             EditorGUILayout.PropertyField(_weatherAudioManagerProp);
             EditorGUILayout.PropertyField(_reflectionManagerProp);
@@ -964,6 +987,7 @@ namespace BlackHorizon.HorizonWeatherTime
 
             CheckAndConfigureSkyboxMaterial();
             CheckAndConfigureCloudVolume();
+            CheckAndConfigureFogVolume();
             CheckAndConfigureParticleAssets();
             CheckAndConfigureOcclusionCamera();
             CheckAndConfigureAudioRig(_target);
@@ -990,21 +1014,60 @@ namespace BlackHorizon.HorizonWeatherTime
                 HorizonTemplateGenerator.Generate();
             }
 
+            HorizonTemplateGenerator.EnsureModernFogTemplates();
+
             var defaultPresets = new List<WeatherProfile>();
 
             WeatherProfile clear = CopyTemplateIfMissing("Template_Clear", "Default Clear");
             WeatherProfile rain = CopyTemplateIfMissing("Template_Rain", "Default Rain");
             WeatherProfile snow = CopyTemplateIfMissing("Template_Snow", "Default Snow");
 
-            EnsureDefaultAudioModules(clear, "Template_Clear");
-            EnsureDefaultAudioModules(rain, "Template_Rain");
-            EnsureDefaultAudioModules(snow, "Template_Snow");
+            EnsureDefaultSubModules(clear, "Template_Clear");
+            EnsureDefaultSubModules(rain, "Template_Rain");
+            EnsureDefaultSubModules(snow, "Template_Snow");
 
             if (clear != null) defaultPresets.Add(clear);
             if (rain != null) defaultPresets.Add(rain);
             if (snow != null) defaultPresets.Add(snow);
 
             return defaultPresets;
+        }
+
+        /// <summary>
+        /// Restores any missing sub-module reference on a default working preset from its
+        /// internal template, so deleting a subfolder under Weather Profiles/Modules rebuilds it cleanly.
+        /// </summary>
+        private void EnsureDefaultSubModules(WeatherProfile workingPreset, string templateName)
+        {
+            if (workingPreset == null) return;
+
+            string templateDir = GetPackageTemplatesPath("Presets");
+            string templatePath = $"{templateDir}/{templateName}.asset";
+            WeatherProfile template = AssetDatabase.LoadAssetAtPath<WeatherProfile>(templatePath);
+            if (template == null) return;
+
+            bool dirty = false;
+
+            if (workingPreset.lightingProfile == null && template.lightingProfile != null)
+            { workingPreset.lightingProfile = CopyModuleIfNeeded(template.lightingProfile, "Lighting"); dirty = true; }
+            if (workingPreset.skyProfile == null && template.skyProfile != null)
+            { workingPreset.skyProfile = CopyModuleIfNeeded(template.skyProfile, "Sky"); dirty = true; }
+            if (workingPreset.cloudProfile == null && template.cloudProfile != null)
+            { workingPreset.cloudProfile = CopyModuleIfNeeded(template.cloudProfile, "Clouds"); dirty = true; }
+            if (workingPreset.moonProfile == null && template.moonProfile != null)
+            { workingPreset.moonProfile = CopyModuleIfNeeded(template.moonProfile, "Moon"); dirty = true; }
+            if (workingPreset.fogProfile == null && template.fogProfile != null)
+            { workingPreset.fogProfile = CopyModuleIfNeeded(template.fogProfile, "Fog"); dirty = true; }
+            if (workingPreset.effectsProfile == null && template.effectsProfile != null)
+            { workingPreset.effectsProfile = CopyModuleIfNeeded(template.effectsProfile, "Effects"); dirty = true; }
+            if (workingPreset.audioProfile == null && template.audioProfile != null)
+            { workingPreset.audioProfile = CopyModuleIfNeeded(template.audioProfile, "Audio"); dirty = true; }
+
+            if (dirty)
+            {
+                EditorUtility.SetDirty(workingPreset);
+                _modulesCacheDirty = true;
+            }
         }
 
         /**
@@ -1099,6 +1162,38 @@ namespace BlackHorizon.HorizonWeatherTime
             if (cloudVolume != null)
             {
                 cloudVolume.EnsureVolumeRenderer();
+            }
+        }
+
+        /// <summary>
+        /// Binds (or creates) the analytical fog volume on the FogManager and makes sure
+        /// its proxy hull, material and camera depth request exist.
+        /// </summary>
+        private void CheckAndConfigureFogVolume()
+        {
+            if (_fogManagerProp == null || _fogManagerProp.objectReferenceValue == null) return;
+            FogManager fogManager = (FogManager)_fogManagerProp.objectReferenceValue;
+
+            HorizonFogVolume fogVolume = fogManager.fogVolume;
+            if (fogVolume == null)
+            {
+                fogVolume = _target.GetComponentInChildren<HorizonFogVolume>(true);
+                if (fogVolume == null)
+                {
+                    GameObject fogObj = new GameObject("Atmospheric Fog Volume");
+                    fogObj.transform.SetParent(fogManager.transform);
+                    fogObj.transform.localPosition = Vector3.zero;
+                    fogVolume = fogObj.AddComponent<HorizonFogVolume>();
+                }
+
+                fogManager.fogVolume = fogVolume;
+                EditorUtility.SetDirty(fogManager);
+                SyncUdonProxy(fogManager);
+            }
+
+            if (fogVolume != null)
+            {
+                fogVolume.EnsureVolumeRenderer();
             }
         }
 

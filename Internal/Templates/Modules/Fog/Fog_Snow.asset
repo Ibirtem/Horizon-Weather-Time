@@ -13,10 +13,21 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   enabled: 1
+  renderMode: 0
   fogMode: 3
-  dayColor: {r: 0.7, g: 0.8, b: 1, a: 1}
-  nightColor: {r: 0.05, g: 0.05, b: 0.15, a: 1}
-  density: 0.002
-  startDistance: 10
+  dayColor: {r: 0.58, g: 0.63, b: 0.7, a: 1}
+  nightColor: {r: 0.05, g: 0.06, b: 0.08, a: 1}
+  dayZenithColor: {r: 0.4, g: 0.45, b: 0.52, a: 1}
+  nightZenithColor: {r: 0.025, g: 0.03, b: 0.045, a: 1}
+  density: 0.0045
+  heightDensity: 0.006
+  heightFalloff: 0.04
+  heightBaseOffset: 0
+  maxOpacity: 0.95
+  startDistance: 5
   endDistance: 250
+  skyHorizonHeight: 0.3
   skyboxBlendIntegrity: 1
+  sunInscatterColor: {r: 0.9, g: 0.92, b: 0.95, a: 1}
+  sunInscatterIntensity: 0.2
+  sunInscatterPower: 6

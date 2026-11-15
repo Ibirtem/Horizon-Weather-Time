@@ -63,6 +63,7 @@ Shader "Horizon/World Clouds"
             #pragma target 3.0
 
             #include "UnityCG.cginc"
+            #include "Includes/HorizonFogCommon.cginc"
 
             #pragma multi_compile_instancing
 
@@ -725,12 +726,29 @@ Shader "Horizon/World Clouds"
                 cloudRadiance *= _Exposure;
                 float3 cloudColorLDR = saturate((cloudRadiance * (2.51 * cloudRadiance + 0.03)) / (cloudRadiance * (2.43 * cloudRadiance + 0.59) + 0.14));
 
-                // Horizon fog in LDR (matches HorizonSkyboxShader)
-                float fogHeightFactor = max(rayDir.y, 0.0);
-                float horizonMask = 1.0 - smoothstep(0.0, 0.25, fogHeightFactor);
-                horizonMask = pow(horizonMask, 2.0);
-                float finalFogMask = horizonMask * _HorizonFogBlend;
-                float3 fogColor = lerp(_HorizonFogColor.rgb, cloudColorLDR, 0.5);
+                // Horizon atmospheric fog in LDR (matches HorizonSkyboxShader and the screen fog pass).
+                // Distant cloud decks dissolve into the same haze band as the mountains, while
+                // nearby clouds keep their shape. Falls back to the per-material legacy fog.
+                float3 fogColor = float3(0.0, 0.0, 0.0);
+                float finalFogMask = 0.0;
+
+                if (_UdonHorizonFogHorizonColor.a > 0.5)
+                {
+                    float skyFog = HorizonEvaluateSkyFog(camPos, rayDir, fogColor);
+
+                    // Distance weighting: the cloud sheet only melts into the haze once it is far away.
+                    float distanceWeight = saturate((distToStart - 500.0) / 9000.0);
+                    finalFogMask = saturate(skyFog * distanceWeight);
+                }
+                else
+                {
+                    float fogHeightFactor = max(rayDir.y, 0.0);
+                    float horizonMask = 1.0 - smoothstep(0.0, 0.25, fogHeightFactor);
+                    horizonMask = pow(horizonMask, 2.0);
+                    finalFogMask = saturate(horizonMask * _HorizonFogBlend);
+                    fogColor = _HorizonFogColor.rgb;
+                }
+
                 cloudColorLDR = lerp(cloudColorLDR, fogColor, finalFogMask);
 
                 // Premultiply ONCE for Blend One OneMinusSrcAlpha

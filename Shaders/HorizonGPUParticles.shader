@@ -23,7 +23,7 @@ Shader "Horizon/GPU Particles"
     }
     SubShader
     {
-        Tags { "Queue"="Transparent" "RenderType"="Transparent" "IgnoreProjector"="True" }
+        Tags { "Queue"="Transparent+20" "RenderType"="Transparent" "IgnoreProjector"="True" }
         LOD 100
 
         Pass
@@ -39,6 +39,7 @@ Shader "Horizon/GPU Particles"
             #pragma target 3.5
 
             #include "UnityCG.cginc"
+            #include "Includes/HorizonFogCommon.cginc"
 
             sampler2D _WeatherOcclusionTex;
             float4 _WeatherOcclusionTex_TexelSize;
@@ -58,6 +59,7 @@ Shader "Horizon/GPU Particles"
                 float4 vertex : SV_POSITION;
                 half2 uv : TEXCOORD0;
                 half4 color : COLOR;
+                float3 worldPos : TEXCOORD2;
                 UNITY_FOG_COORDS(1)
             };
 
@@ -77,7 +79,7 @@ Shader "Horizon/GPU Particles"
                 return (frac(pos / bounds) * bounds); 
             }
 
-            #define CULL_VERTEX(o) { o.vertex = float4(0,0,0,0); o.uv = 0; o.color = 0; return o; }
+            #define CULL_VERTEX(o) { o.vertex = float4(0,0,0,0); o.uv = 0; o.color = 0; o.worldPos = 0; return o; }
 
             v2f vert (appdata v)
             {
@@ -148,6 +150,7 @@ Shader "Horizon/GPU Particles"
                                       + fallDir * quadOffset.y * _HorizonParticleSize * _Stretch;
 
                 o.vertex = mul(UNITY_MATRIX_VP, float4(vertexWorldPos, 1.0));
+                o.worldPos = vertexWorldPos;
                 
                 o.uv = TRANSFORM_TEX(v.uv0, _MainTex);
                 
@@ -166,7 +169,16 @@ Shader "Horizon/GPU Particles"
             half4 frag (v2f i) : SV_Target
             {
                 half4 col = tex2D(_MainTex, i.uv) * i.color;
+
+                // Legacy fallback (active only when RenderSettings.fog is enabled).
                 UNITY_APPLY_FOG(i.fogCoord, col);
+
+                // Analytical height fog: rain/snow streaks fade into the same haze as the
+                // terrain instead of hanging as bright lines on top of the fogged scene.
+                float3 horizonFogColor;
+                float fogAlpha = HorizonEvaluateFog(_WorldSpaceCameraPos.xyz, i.worldPos, horizonFogColor);
+                col.rgb = lerp(col.rgb, horizonFogColor, fogAlpha);
+
                 return col;
             }
             ENDCG

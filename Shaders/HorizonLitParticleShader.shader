@@ -8,7 +8,7 @@ Shader "Horizon/Lit Particle"
     }
     SubShader
     {
-        Tags { "Queue"="Transparent" "RenderType"="Transparent" "IgnoreProjector"="True" }
+        Tags { "Queue"="Transparent+20" "RenderType"="Transparent" "IgnoreProjector"="True" }
         LOD 100
 
         Pass

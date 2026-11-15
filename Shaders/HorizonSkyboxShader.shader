@@ -87,6 +87,7 @@ Shader "Horizon/Procedural Skybox"
             #pragma shader_feature_local _ENABLE_SKYBOX_CLOUDS
 
             #include "UnityCG.cginc"
+            #include "Includes/HorizonFogCommon.cginc"
 
             #pragma multi_compile_instancing
 
@@ -1409,17 +1410,28 @@ Shader "Horizon/Procedural Skybox"
                 );
 
                 // =============================================================
-                //  6. HORIZON FOG (in LDR, post-tonemap)
+                //  6. HORIZON ATMOSPHERIC FOG (in LDR, post-tonemap)
                 //  Fog color is specified as final display color.
+                //  Analytical height fog published by FogManager keeps distant
+                //  terrain peaks and the sky in the exact same haze band.
                 // =============================================================
 
-                float fogHeightFactor = max(direction.y, 0.0);
-                float horizonMask     = 1.0 - smoothstep(0.0, 0.25, fogHeightFactor);
-                horizonMask = pow(horizonMask, 2.0);
-                float finalFogMask = horizonMask * _HorizonFogBlend;
+                if (_UdonHorizonFogHorizonColor.a > 0.5)
+                {
+                    float3 atmosphericFogColor;
+                    float skyFogAlpha = HorizonEvaluateSkyFog(_WorldSpaceCameraPos.xyz, direction, atmosphericFogColor);
+                    finalColor = lerp(finalColor, atmosphericFogColor, skyFogAlpha);
+                }
+                else
+                {
+                    // Legacy fallback: per-material horizon fog.
+                    float fogHeightFactor = max(direction.y, 0.0);
+                    float horizonMask     = 1.0 - smoothstep(0.0, 0.25, fogHeightFactor);
+                    horizonMask = pow(horizonMask, 2.0);
+                    float finalFogMask = horizonMask * _HorizonFogBlend;
 
-                float3 fogColor = lerp(_HorizonFogColor.rgb, finalColor, 0.5);
-                finalColor = lerp(finalColor, fogColor, finalFogMask);
+                    finalColor = lerp(finalColor, _HorizonFogColor.rgb, finalFogMask);
+                }
 
                 return half4(finalColor, 1.0);
             }
